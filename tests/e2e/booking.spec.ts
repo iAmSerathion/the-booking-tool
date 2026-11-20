@@ -287,6 +287,24 @@ test("round robin on the general page gives the time to the free host booked lea
   }
 });
 
+test("the booking pages hydrate without console errors, and the time zone list fills in after mount", async ({ page }) => {
+  const host = await newHost();
+  try {
+    const problems: string[] = [];
+    page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
+    page.on("console", (message) => message.type() === "error" && problems.push(`console: ${message.text()}`));
+    for (const path of ["/", `/${host.slug}`]) {
+      await page.goto(path);
+      // Before mount the select has one option; the browser's zones follow once React has hydrated.
+      await expect.poll(() => page.getByLabel("Time zone").locator("option").count()).toBeGreaterThan(100);
+      await expect(page.getByLabel("Time zone")).toHaveValue(zone);
+    }
+    expect(problems).toEqual([]);
+  } finally {
+    await removeHost(host.id);
+  }
+});
+
 test("unknown member pages and confirmation tokens show the 404 page", async ({ page }) => {
   await page.goto(`/nobody-${randomUUID().slice(0, 8)}`);
   await expect(page.getByText("This page could not be found.")).toBeVisible();
