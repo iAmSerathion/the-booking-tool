@@ -69,3 +69,56 @@ test("free/busy returns the busy blocks set for a calendar inside the range", as
   });
   expect((await response.json()).calendars).toEqual({ [email]: { busy: [block] }, "empty@example.com": { busy: [] } });
 });
+
+test("events: insert with Meet, list, free/busy, delete, and one-shot insert failures per calendar", async ({ request }) => {
+  // Unique per run: a reused fake keeps its events.
+  const calendar = `events#${Date.now()}@example.com`;
+  const auth = { authorization: `Bearer fake-access-${email}` };
+  const events = `${googleFakeUrl}/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`;
+  const body = {
+    summary: "Check",
+    start: { dateTime: "2030-01-07T09:00:00.000Z", timeZone: "UTC" },
+    end: { dateTime: "2030-01-07T09:30:00.000Z", timeZone: "UTC" },
+    conferenceData: { createRequest: { requestId: "r1", conferenceSolutionKey: { type: "hangoutsMeet" } } },
+  };
+  expect((await request.post(events, { data: body })).status()).toBe(401);
+
+  // Without conferenceDataVersion=1 Google ignores the conference request.
+  const plain = await (await request.post(events, { headers: auth, data: body })).json();
+  expect(plain.hangoutLink).toBeUndefined();
+  expect(plain.conferenceData).toBeUndefined();
+  const meet = await (await request.post(`${events}?conferenceDataVersion=1&sendUpdates=all`, { headers: auth, data: body })).json();
+  expect(meet.hangoutLink).toMatch(/^https:\/\/meet\.google\.com\//);
+  expect(meet.conferenceData.entryPoints).toEqual([{ entryPointType: "video", uri: meet.hangoutLink }]);
+
+  const range = "timeMin=2030-01-07T00:00:00Z&timeMax=2030-01-08T00:00:00Z";
+  expect((await (await request.get(`${events}?${range}`, { headers: auth })).json()).items).toHaveLength(2);
+  const busy = async () =>
+    (
+      await (
+        await request.post(`${googleFakeUrl}/calendar/v3/freeBusy`, {
+          headers: auth,
+          data: { timeMin: "2030-01-07T00:00:00Z", timeMax: "2030-01-08T00:00:00Z", items: [{ id: calendar }] },
+        })
+      ).json()
+    ).calendars[calendar].busy;
+  expect(await busy()).toEqual([
+    { start: body.start.dateTime, end: body.end.dateTime },
+    { start: body.start.dateTime, end: body.end.dateTime },
+  ]);
+
+  const remove = (id: string) => request.delete(`${events}/${id}?sendUpdates=none`, { headers: auth });
+  expect((await remove(plain.id)).status()).toBe(204);
+  expect((await remove(meet.id)).status()).toBe(204);
+  expect((await remove(meet.id)).status()).toBe(410);
+  expect(await busy()).toEqual([]);
+  const control = (await (await request.get(`${googleFakeUrl}/control/events?calendar=${encodeURIComponent(calendar)}`)).json()).items;
+  expect(control.map((e: { status: string; deleteQuery: unknown }) => [e.status, e.deleteQuery])).toEqual([
+    ["cancelled", { sendUpdates: "none" }],
+    ["cancelled", { sendUpdates: "none" }],
+  ]);
+
+  await request.post(`${googleFakeUrl}/control/fail-insert?calendar=${encodeURIComponent(calendar)}&count=1`);
+  expect((await request.post(events, { headers: auth, data: body })).status()).toBe(503);
+  expect((await request.post(events, { headers: auth, data: body })).status()).toBe(200);
+});
