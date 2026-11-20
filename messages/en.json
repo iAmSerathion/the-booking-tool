@@ -5,5 +5,13 @@
   "login.intro": "Sign in with your Google account.",
   "login.google": "Sign in with Google",
   "login.noAccess": "This Google account has no access. Ask an admin to invite you.",
-  "login.failed": "Sign-in did not work. Please try again."
+  "login.failed": "Sign-in did not work. Please try again.",
+  "booking.error.name": "Please enter your name.",
+  "booking.error.email": "Please enter your email.",
+  "booking.error.emailInvalid": "Please check your email, it does not look complete.",
+  "booking.error.privacy": "Please confirm that you have read the privacy notice.",
+  "booking.error.answerRequired": "Please answer this question.",
+  "booking.error.answerInvalid": "Please choose one of the answers.",
+  "booking.error.already": "You already have a booking on {when}.",
+  "booking.slotRange": "{day}, {start} to {end}"
 }
