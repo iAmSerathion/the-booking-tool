@@ -26,6 +26,8 @@ export const optionalEnvKeys = [
   "DEFAULT_LOCALE",
   "DEFAULT_TIMEZONE",
   "ALLOWED_GOOGLE_DOMAINS",
+  "GOOGLE_HOSTED_DOMAIN",
+  "INITIAL_ADMIN_EMAIL",
   "TRUST_PROXY_HEADERS",
   "BOOKING_ATTEMPTS_PER_MINUTE",
   "WEBHOOK_URL",
@@ -35,7 +37,8 @@ export const optionalEnvKeys = [
 export type Config = {
   appUrl: string;
   supabase: { url: string; anonKey: string; serviceRoleKey: string };
-  google: { clientId: string; clientSecret: string; allowedDomains: string[] };
+  google: { clientId: string; clientSecret: string; allowedDomains: string[]; hostedDomain: string | null };
+  initialAdminEmail: string | null;
   schedulerSecret: string;
   mail: { smtpUrl: string; from: string };
   brand: { name: string; logoUrl: string | null; privacyUrl: string | null; imprintUrl: string | null };
@@ -120,6 +123,9 @@ export function parseConfig(env: Env): Config {
   const attempts = Number(get("BOOKING_ATTEMPTS_PER_MINUTE") ?? "10");
   if (!Number.isInteger(attempts) || attempts < 1) problems.push("BOOKING_ATTEMPTS_PER_MINUTE must be a positive integer");
 
+  const initialAdminEmail = get("INITIAL_ADMIN_EMAIL")?.toLowerCase() ?? null;
+  if (initialAdminEmail && !/^[^@\s]+@[^@\s]+$/.test(initialAdminEmail)) problems.push("INITIAL_ADMIN_EMAIL must be an email address");
+
   const webhookSecret = get("WEBHOOK_SECRET");
   if (get("WEBHOOK_URL") && !webhookSecret) problems.push("WEBHOOK_SECRET is required when WEBHOOK_URL is set");
   if (webhookSecret && webhookSecret.length < 32) problems.push("WEBHOOK_SECRET must be at least 32 characters");
@@ -136,7 +142,9 @@ export function parseConfig(env: Env): Config {
         .split(",")
         .map((d) => d.trim().toLowerCase())
         .filter(Boolean),
+      hostedDomain: get("GOOGLE_HOSTED_DOMAIN")?.toLowerCase() ?? null,
     },
+    initialAdminEmail,
     schedulerSecret,
     mail: { smtpUrl: smtpUrl!, from: get("MAIL_FROM")! },
     brand: { name: readBrandName(env), logoUrl, privacyUrl, imprintUrl },
