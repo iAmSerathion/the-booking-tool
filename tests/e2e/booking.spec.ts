@@ -202,7 +202,7 @@ test("when Google fails nothing is booked, and the time can be booked right afte
 
     await fetch(`${googleFakeUrl}/control/fail-insert?calendar=${encodeURIComponent(host.email)}&count=1`, { method: "POST" });
     await page.getByRole("button", { name: "Book this time" }).click();
-    await expect(page.getByRole("main").getByRole("alert")).toHaveText("That did not work, nothing was booked. Please try again.");
+    await expect(page.getByRole("main").getByRole("alert")).toHaveText(/^That did not work, nothing was booked\./);
     expect(await bookingsOf(host.id)).toEqual([]);
     expect(await fakeEvents(host.email)).toEqual([]);
 
@@ -213,6 +213,31 @@ test("when Google fails nothing is booked, and the time can be booked right afte
     const [booking] = await bookingsOf(host.id);
     expect(booking.meet_url).toBeNull();
     expect((await liveEvents(host.email))[0].conferenceData).toBeUndefined();
+  } finally {
+    await removeHost(host.id);
+  }
+});
+
+test("when the Google insert response is lost the created event is taken back and a retry books once", async ({ page }) => {
+  const host = await newHost({ meetAuto: false });
+  try {
+    await page.goto(`/${host.slug}`);
+    await (await openDay(page, nextDay([1, 2, 3, 4, 5]))).getByRole("button", { name: "11:00 AM" }).click();
+    await fillDetails(page, "Robin Invitee", `invitee-${randomUUID()}@example.com`);
+
+    // Google creates the event, but the answer is a 503: the action cannot know the id from the response.
+    await fetch(`${googleFakeUrl}/control/lose-insert?calendar=${encodeURIComponent(host.email)}&count=1`, { method: "POST" });
+    await page.getByRole("button", { name: "Book this time" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText("nothing was booked");
+    expect(await bookingsOf(host.id)).toEqual([]);
+    const events = await fakeEvents(host.email);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ status: "cancelled", deleteQuery: { sendUpdates: "none" } });
+    expect(await liveEvents(host.email)).toEqual([]);
+
+    await page.getByRole("button", { name: "Book this time" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your booking is confirmed.");
+    expect(await liveEvents(host.email)).toHaveLength(1);
   } finally {
     await removeHost(host.id);
   }

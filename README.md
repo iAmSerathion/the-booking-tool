@@ -63,8 +63,13 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `/confirmed/<token>`; only the token's hash is stored.
 - Brand, privacy and imprint links come from `BRAND_NAME`, `BRAND_LOGO_URL`, `PRIVACY_URL` and `IMPRINT_URL`. With a
   privacy URL set, invitees must confirm they read it.
-- Booking attempts are rate limited per client address, which is only known behind a proxy with
-  `TRUST_PROXY_HEADERS=true`. Without it all invitees share one limit (`BOOKING_ATTEMPTS_PER_MINUTE`).
+- Booking attempts are rate limited per client address (`BOOKING_ATTEMPTS_PER_MINUTE`), which is only known behind a
+  proxy with `TRUST_PROXY_HEADERS=true`. Without it the limit is per invitee email, plus a global ceiling of 20 times
+  that number. A flood of many different emails can still reach the ceiling and pause booking for everyone until it
+  stops, so set `TRUST_PROXY_HEADERS=true` in production behind a proxy that appends the client address.
+- If the invitee already has an upcoming booking of the event type, the page gives the same answer as for any other
+  failure (its text points to the invitation in their email), so nobody can find out from outside whether an email has
+  a booking.
 
 ## Checks
 

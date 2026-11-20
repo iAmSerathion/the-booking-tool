@@ -99,7 +99,7 @@ describe("listEvents", () => {
 
 describe("createEvent", () => {
   const event = {
-    bookingId: "b1",
+    bookingId: "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d",
     summary: "Meeting: Ada and Host",
     description: "Details",
     start: new Date("2026-11-04T09:30:00Z"),
@@ -117,8 +117,9 @@ describe("createEvent", () => {
     expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({
       start: { dateTime: "2026-11-04T09:30:00.000Z", timeZone: "Europe/Berlin" },
       attendees: event.attendees,
-      extendedProperties: { private: { booking_id: "b1" } },
-      conferenceData: { createRequest: { requestId: "b1", conferenceSolutionKey: { type: "hangoutsMeet" } } },
+      id: "0b1c2d3e4f504a6b8c7d9e0f1a2b3c4d",
+      extendedProperties: { private: { booking_id: "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d" } },
+      conferenceData: { createRequest: { requestId: "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d", conferenceSolutionKey: { type: "hangoutsMeet" } } },
     });
   });
 

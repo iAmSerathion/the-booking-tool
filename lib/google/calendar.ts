@@ -113,15 +113,20 @@ type EventResponse = {
 
 const eventsUrl = (calendarId: string) => `${googleUrls.calendar()}/calendars/${encodeURIComponent(calendarId)}/events`;
 
+// The event id we choose for a booking: its UUID without dashes, which is valid base32hex (a-v, 0-9) for Google. Knowing
+// it lets the caller delete the event after a lost insert response, and Google answers a repeated id with 409 instead of
+// a second event and invitation.
+export const googleEventId = (bookingId: string) => bookingId.replace(/-/g, "").toLowerCase();
+
 // A booking event in the host's primary calendar with the invitee as guest. sendUpdates=all: Google sends the invitation.
-// With meet, Google adds a Meet conference (needs conferenceDataVersion=1); the booking id as requestId keeps a retried
-// request from creating a second conference.
+// With meet, Google adds a Meet conference (needs conferenceDataVersion=1).
 export async function createEvent(accessToken: string, calendarId: string, event: NewEvent): Promise<{ id: string; meetUrl: string | null }> {
   const params = new URLSearchParams({ sendUpdates: "all", conferenceDataVersion: "1" });
   const response = await fetch(`${eventsUrl(calendarId)}?${params}`, {
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({
+      id: googleEventId(event.bookingId),
       summary: event.summary,
       description: event.description,
       start: { dateTime: event.start.toISOString(), timeZone: event.timeZone },

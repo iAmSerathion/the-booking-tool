@@ -48,6 +48,7 @@ vi.mock("@/lib/google/calendar", () => ({
     return { id: "event-1", meetUrl: (args[2] as { meet: boolean }).meet ? "https://meet.google.com/x" : null };
   },
   deleteEvent: async (...args: unknown[]) => state.calls.push(["deleteEvent", ...args]),
+  googleEventId: (id: string) => id.replace(/-/g, ""),
 }));
 vi.mock("@/lib/db/admin", () => ({
   createAdminSupabase: () => ({
@@ -268,10 +269,18 @@ describe("bookSlot", () => {
     await expect(fresh({ kind: "page" }, form({ privacy: false }))).rejects.toThrow("NEXT_REDIRECT");
   });
 
-  it("refuses a second upcoming booking of the same event type before Google is asked", async () => {
+  it("refuses a second upcoming booking of the same event type before Google is asked, like any other failure", async () => {
     state.upcoming = [{ id: "b0" }];
-    expect(await book()).toEqual({ ok: false, error: "booking.error.already" });
-    expect(names()).toEqual(["limit"]);
+    expect(await book()).toEqual({ ok: false, error: "booking.error.failed" });
+    expect(names()).toEqual(["limit", "loadOffer"]);
+  });
+
+  it("does not reveal an existing booking for a start that is not offered", async () => {
+    state.upcoming = [{ id: "b0" }];
+    const unknown = await book({ start: "1970-01-01T00:00:00.000Z" });
+    state.upcoming = [];
+    expect(unknown).toMatchObject({ ok: false, error: "booking.error.taken" });
+    expect(await book({ start: "1970-01-01T00:00:00.000Z" })).toEqual(unknown);
   });
 
   it("answers taken with the fresh free times when the start is no longer free", async () => {
@@ -315,12 +324,20 @@ describe("bookSlot", () => {
   it("releases the hold and saves nothing when the Google event fails", async () => {
     state.insertFails = true;
     expect(await book()).toEqual({ ok: false, error: "booking.error.failed" });
-    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "createEvent", "release_hold"]);
+    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "createEvent", "deleteEvent", "release_hold"]);
+  });
+
+  it("takes a possibly created event back, by the id derived from the booking, when the insert response is lost", async () => {
+    state.insertFails = true;
+    await book();
+    const [, , , event] = called("createEvent")[0] as [string, string, string, { bookingId: string }];
+    expect(called("deleteEvent")).toEqual([["deleteEvent", "token-h2", "h2@example.com", event.bookingId.replace(/-/g, ""), "none"]]);
+    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "createEvent", "deleteEvent", "release_hold"]);
   });
 
   it.each([
     ["P0002", { ok: false, error: "booking.error.taken", slots: [{ start: later, end: "2026-11-04T13:30:00.000Z" }] }],
-    ["P0003", { ok: false, error: "booking.error.already" }],
+    ["P0003", { ok: false, error: "booking.error.failed" }],
     ["P0004", { ok: false, error: "booking.error.linkInvalid" }],
     ["XX000", { ok: false, error: "booking.error.failed" }],
   ])("rolls back the event quietly and releases the hold when create_booking fails with %s", async (code, result) => {
