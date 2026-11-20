@@ -28,6 +28,18 @@ keys each time. The API listens on `127.0.0.1:54421`, Postgres on `127.0.0.1:544
 Seeded members: `admin.demo@example.com` (admin) and `host.demo@example.com` (bookable). Login is Google only, so
 locally only the e2e tests sign in, with generated magic-link sessions (`tests/e2e/session.ts`).
 
+## Sign-in
+
+Members sign in with Google through Supabase Auth; there is no password or magic-link login.
+
+- In Supabase, enable the Google provider with a Google OAuth web client whose redirect URI is
+  `<NEXT_PUBLIC_SUPABASE_URL>/auth/v1/callback`, and add `<APP_URL>/auth/callback` to the Auth redirect allow-list.
+  The calendar connection uses its own redirect (`<APP_URL>/api/google/callback`); one Google client can carry both.
+- Who gets in: members an admin invited; anyone from a Workspace domain in `ALLOWED_GOOGLE_DOMAINS` (they get a member
+  profile on first sign-in); and, on a fresh install, `INITIAL_ADMIN_EMAIL`, which becomes the first admin. With
+  `ALLOWED_GOOGLE_DOMAINS` empty, sign-in is invite-only and any Google account (Gmail included) works.
+- Deactivated members and everyone else are signed out with a notice.
+
 ## Checks
 
 ```bash
