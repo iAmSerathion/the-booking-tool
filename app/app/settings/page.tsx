@@ -28,7 +28,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/app/set
         ) : (
           <>
             <p>Not connected. Connect your calendar so bookings avoid your busy times and land in your calendar.</p>
-            {/* A plain link: the route redirects to Google, which a client-side navigation cannot follow. */}
+            {/* A plain link: the route redirects to Google, which a client-side navigation cannot follow. The lint rule
+                takes the route handler for the /[slug] page. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a href="/api/google/connect">Connect Google Calendar</a>
           </>
         )}
@@ -118,6 +120,7 @@ function Connected({ calendar }: { calendar: CalendarConnection }) {
       {calendar.needsReconnect ? (
         <p>
           <strong>Reconnect needed:</strong> Google no longer accepts the connection with {calendar.accountEmail}.{" "}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/api/google/connect">Reconnect Google Calendar</a>
         </p>
       ) : (

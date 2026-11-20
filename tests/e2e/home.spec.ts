@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 test("brand and locale come from the environment at runtime", async ({ page }) => {
+  // "/" is the general booking page; the brand sits in its header.
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Acme Bookings");
+  await expect(page.getByRole("banner")).toHaveText("Acme Bookings");
   await expect(page).toHaveTitle("Acme Bookings");
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
 });
