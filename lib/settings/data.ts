@@ -1,3 +1,4 @@
+import { windowsByDay } from "@/lib/core/settings";
 import { createSupabase } from "@/lib/db/server";
 import { type CalendarEntry, listCalendars } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
@@ -32,4 +33,16 @@ export async function loadCalendarConnection(userId: string): Promise<CalendarCo
     busyCalendarIds: row.busy_calendar_ids ?? [],
     calendars,
   };
+}
+
+// The member's own booking preferences and weekly windows (RLS: only active members read them).
+export async function loadAccount(userId: string) {
+  const supabase = await createSupabase();
+  const [profile, windows] = await Promise.all([
+    supabase.from("profiles").select("slug, timezone, buffer_minutes, min_notice_hours, max_bookings_per_day, meet_auto").eq("id", userId).single(),
+    supabase.from("availability_windows").select("weekday, start_time, end_time").eq("user_id", userId),
+  ]);
+  if (profile.error) throw profile.error;
+  if (windows.error) throw windows.error;
+  return { ...profile.data, days: windowsByDay(windows.data) };
 }

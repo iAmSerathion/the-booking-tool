@@ -66,3 +66,6 @@ export function parseRules(input: Record<keyof Rules, string | null>, zones: rea
 
 // The member's public booking page. Built from APP_URL only, never from request headers.
 export const bookingLink = (appUrl: string, slug: string | null) => (slug ? new URL(slug, `${appUrl}/`).href : null);
+
+// Zones the server knows. Some runtimes leave UTC out of the list, so it is added.
+export const timeZones = () => [...new Set([...Intl.supportedValuesOf("timeZone"), "UTC"])].sort();
