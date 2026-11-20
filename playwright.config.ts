@@ -44,6 +44,9 @@ export default defineConfig({
         ALLOWED_GOOGLE_DOMAINS: "",
         INITIAL_ADMIN_EMAIL: "",
         TRUST_PROXY_HEADERS: "",
+        // Without a trusted proxy every invitee shares one rate limit bucket, parallel tests included. The limit itself
+        // is tested on booking_attempt and limit.ts.
+        BOOKING_ATTEMPTS_PER_MINUTE: "1000",
         APP_URL: baseURL,
         GOOGLE_FAKE_URL: googleFakeUrl,
         GOOGLE_CLIENT_ID: "fake-client",
