@@ -63,6 +63,44 @@ beforeEach(() => {
 });
 
 describe("loadContext", () => {
+  describe("booking links", () => {
+    const token = "a".repeat(43);
+    const link = { id: "link-1", host_id: "h2", event_type_id: typeId, single_use: true, used_at: null, expires_at: null, revoked_at: null };
+    const questions = [{ id: "size", label: "Team size", type: "choice", choices: ["Small", "Large"] }];
+    let row: Record<string, unknown> | null;
+    beforeEach(() => {
+      row = { ...link, prefill: { name: "Ada", email: "ada@example.com", timezone: "Europe/Berlin", answers: { size: "Large", other: "x" } }, metadata: { secret: "s" } };
+      db.tables.booking_links = (f) => ({ data: has(f, "token_hash") === hashToken(token) ? row : null, error: null });
+      db.tables.event_types = (f) => ({ data: has(f, "id") === typeId ? { ...meeting, questions } : null, error: null });
+      db.tables.profiles = (f) => ({ data: people.find((p) => p.id === has(f, "id")) ?? null, error: null });
+    });
+
+    it("fixes host and event type and returns the cleaned prefill, never the metadata", async () => {
+      const context = await loadContext({ kind: "link", token });
+      expect(context).toEqual({
+        via: "link",
+        hosts: [{ id: "h2", name: "Blake Host", meetAuto: false }],
+        eventType: { id: typeId, slug: "meeting", title: "Meeting", description: null, durationMinutes: 30, questions },
+        linkId: "link-1",
+        prefill: { name: "Ada", email: "ada@example.com", timeZone: "Europe/Berlin", answers: { size: "Large" } },
+      });
+      expect(JSON.stringify(context)).not.toContain("secret");
+      expect(db.queries.find(([t]) => t === "profiles")![1]).toEqual(expect.arrayContaining([["eq", "active", true], ["eq", "bookable", true]]));
+      expect(db.queries.find(([t]) => t === "event_types")![1]).toEqual(expect.arrayContaining([["eq", "active", true]]));
+    });
+
+    it("is null for malformed, unknown, used, expired and revoked links and a gone host or event type", async () => {
+      expect(await loadContext({ kind: "link", token: "short" })).toBeNull();
+      expect(await loadContext({ kind: "link", token: "b".repeat(43) })).toBeNull();
+      for (const change of [{ used_at: "2026-01-01T00:00:00Z" }, { expires_at: "2020-01-01T00:00:00Z" }, { revoked_at: "2026-01-01T00:00:00Z" }, { host_id: "gone" }, { event_type_id: "gone" }]) {
+        row = { ...link, prefill: {}, ...change };
+        expect(await loadContext({ kind: "link", token }), JSON.stringify(change)).toBeNull();
+      }
+      row = { ...link, single_use: false, used_at: "2026-01-01T00:00:00Z", prefill: {} };
+      expect(await loadContext({ kind: "link", token })).not.toBeNull();
+    });
+  });
+
   it("gives the general page every active bookable member in round robin, with the default event type", async () => {
     expect(await loadContext({ kind: "page" })).toEqual({
       via: "page",

@@ -74,5 +74,8 @@
   "cancel.heading": "Diesen Termin absagen?",
   "cancel.reason": "Grund (optional)",
   "cancel.submit": "Termin absagen",
-  "cancel.keep": "Termin behalten"
+  "cancel.keep": "Termin behalten",
+  "link.title": "Termin buchen",
+  "link.closed": "Dieser Link kann nicht mehr verwendet werden",
+  "link.closedBody": "Er wurde vielleicht schon benutzt, ist abgelaufen oder wurde zurückgezogen. Bitte frag nach einem neuen Link."
 }

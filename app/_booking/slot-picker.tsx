@@ -14,9 +14,10 @@ const noSubscribe = () => () => {};
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "";
 
 // The browser's zone (the instance zone on the server and before hydration), until the invitee picks another.
-export function useInviteeZone(defaultTimeZone: string): [string, (zone: string) => void] {
+export function useInviteeZone(defaultTimeZone: string, initial?: string): [string, (zone: string) => void] {
   const detected = useSyncExternalStore(noSubscribe, browserZone, () => defaultTimeZone) || defaultTimeZone;
-  const [chosen, setChosen] = useState<string | null>(null);
+  // initial: a zone the invitee picked before (a rebook link), which wins over the browser's.
+  const [chosen, setChosen] = useState<string | null>(initial ?? null);
   return [chosen ?? detected, setChosen];
 }
 
