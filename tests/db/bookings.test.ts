@@ -179,6 +179,7 @@ describe("hold_slot", () => {
       // A reschedule may overlap its own booking, and the booking does not count for the day.
       expect(await hold(client, host, at(10, 15), at(10, 45), { except: booked, max: 1 })).not.toBeNull();
       expect(await hold(client, host, at(14), at(14, 30), { max: 1 })).toBeNull();
+      await client.query("select public.release_hold($1)", [await scalar(client, "select id from public.slot_holds where host_id = $1", [host])]);
       // Under a higher maximum the day still has room.
       expect(await hold(client, host, at(15), at(15, 30), { max: 2 })).not.toBeNull();
 
@@ -189,6 +190,83 @@ describe("hold_slot", () => {
       expect(await scalar(client, "select count(*)::int from public.slot_holds where host_id = $1", [host])).toBe(1);
     }));
 });
+
+describe("hold_slot concurrency", () => {
+  // Runs the holds on separate connections at the same time, each committing on its own, and returns their results.
+  async function parallel(host: string, holds: { starts: string; ends: string; o?: HoldOptions }[]) {
+    return Promise.all(
+      holds.map(async ({ starts, ends, o }) => {
+        const c = await pool.connect();
+        try {
+          await c.query("begin");
+          await actAs(c, "service_role");
+          const id = await hold(c, host, starts, ends, o);
+          await c.query("commit");
+          return id;
+        } finally {
+          await c.query("rollback").catch(() => {});
+          c.release();
+        }
+      }),
+    );
+  }
+
+  async function withHost<T>(email: string, fn: (host: string) => Promise<T>): Promise<T> {
+    const setup = await pool.connect();
+    let host = "";
+    try {
+      host = await addProfile(setup, email);
+      return await fn(host);
+    } finally {
+      if (host) await removeProfile(setup, host);
+      setup.release();
+    }
+  }
+
+  it("counts live holds toward the daily maximum when two invitees race for different times", () =>
+    withHost("max-race@example.com", async (host) => {
+      const results = await parallel(host, [
+        { starts: at(10), ends: at(10, 30), o: { max: 1 } },
+        { starts: at(14), ends: at(14, 30), o: { max: 1 } },
+      ]);
+      expect(results.filter((id) => id !== null)).toHaveLength(1);
+      // Releasing the hold frees the day again; another day is unaffected.
+      await withClient(async (c) => {
+        await c.query("select public.release_hold($1)", [results.find((id) => id !== null)]);
+        expect(await hold(c, host, at(16), at(16, 30), { max: 1 })).not.toBeNull();
+      });
+    }));
+
+  it("keeps the buffer between concurrent holds, and allows adjacent holds without a buffer", async () => {
+    await withHost("buffer-race@example.com", async (host) => {
+      const buffered = await parallel(host, [
+        { starts: at(10), ends: at(10, 30), o: { buffer: 15 } },
+        { starts: at(10, 30), ends: at(11), o: { buffer: 15 } },
+      ]);
+      expect(buffered.filter((id) => id !== null)).toHaveLength(1);
+    });
+    await withHost("nobuffer-race@example.com", async (host) => {
+      const plain = await parallel(host, [
+        { starts: at(10), ends: at(10, 30) },
+        { starts: at(10, 30), ends: at(11) },
+      ]);
+      expect(plain.filter((id) => id !== null)).toHaveLength(2);
+    });
+  });
+});
+
+async function withClient(fn: (client: Client) => Promise<void>) {
+  const c = await pool.connect();
+  try {
+    await c.query("begin");
+    await actAs(c, "service_role");
+    await fn(c);
+    await c.query("commit");
+  } finally {
+    await c.query("rollback").catch(() => {});
+    c.release();
+  }
+}
 
 describe("create_booking", () => {
   it("writes the booking and one outbox row and consumes the hold", () =>
