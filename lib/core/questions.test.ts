@@ -3,8 +3,8 @@ import { answerMaxLength, cleanMultiline, cleanText, type Question, validateAnsw
 
 describe("cleanText", () => {
   it("drops soft hyphens and invisible characters, control characters become spaces", () => {
-    expect(cleanText("Manage­ment", 50)).toBe("Management");
-    expect(cleanText("a​b‮c﻿d", 50)).toBe("abcd");
+    expect(cleanText("Manage\u00adment", 50)).toBe("Management");
+    expect(cleanText("a\u200bb\u202ec\ufeffd", 50)).toBe("abcd");
     expect(cleanText(" 5\tto\n\n20\u0000 ", 50)).toBe("5 to 20");
   });
 
@@ -21,15 +21,15 @@ describe("cleanText", () => {
 
 describe("cleanMultiline", () => {
   it("keeps line breaks, collapses whitespace per line and keeps at most one empty line", () => {
-    expect(cleanMultiline("  First the sheet,\t then  mails. \r\n\r\n\r\n\n  Then   follow up.  ", 100)).toBe("First the sheet, then mails.\n\nThen follow up.");
+    expect(cleanMultiline("  First the sheet,\t then\u00a0 mails. \r\n\r\n\r\n\n  Then   follow up.  ", 100)).toBe("First the sheet, then mails.\n\nThen follow up.");
     expect(cleanMultiline("a\rb\u2028c\u2029d", 100)).toBe("a\nb\nc\nd");
     expect(cleanMultiline("a \n \n \n b", 100)).toBe("a\n\nb");
   });
 
   it("drops invisible characters and turns other control characters into spaces", () => {
-    expect(cleanMultiline("Manage­ment​﻿", 50)).toBe("Management");
+    expect(cleanMultiline("Manage\u00adment\u200b\ufeff", 50)).toBe("Management");
     expect(cleanMultiline("a\u0000b\u0085c\u000bd\u000ce", 50)).toBe("a b c d e");
-    expect(cleanMultiline("­ \n​\n\t", 50)).toBe("");
+    expect(cleanMultiline("\u00ad \n\u200b\n\t", 50)).toBe("");
   });
 
   it("cuts by characters without trailing whitespace or line break", () => {
@@ -67,7 +67,7 @@ describe("validateAnswers", () => {
   });
 
   it("a required question without an answer is an error", () => {
-    for (const raw of [{}, { topic: "" }, { topic: " ­ " }, null, "x", []]) {
+    for (const raw of [{}, { topic: "" }, { topic: " \u00ad " }, null, "x", []]) {
       expect(validateAnswers(questions, raw).errors).toEqual({ topic: "booking.error.answerRequired" });
     }
   });
