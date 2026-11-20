@@ -83,7 +83,7 @@ describe("idTokenEmail", () => {
     expect(idTokenEmail(jwt({ email: "Host.Demo@Example.com", email_verified: true }))).toBe("host.demo@example.com");
   });
 
-  it.each([["unverified", jwt({ email: "a@example.com", email_verified: false })], ["no email", jwt({})], ["garbage", "a.%%%.c"], ["missing", undefined]])(
+  it.each([["unverified", jwt({ email: "a@example.com", email_verified: false })], ["no verified flag", jwt({ email: "a@example.com" })], ["verified as string", jwt({ email: "a@example.com", email_verified: "true" })], ["no email", jwt({})], ["garbage", "a.%%%.c"], ["missing", undefined]])(
     "returns null when %s",
     (_, token) => {
       expect(idTokenEmail(token)).toBeNull();

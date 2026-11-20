@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
   if (error || !data.user) return to("/login?error=failed");
 
-  // Only the user GoTrue returns for this session counts: its email and identities are verified by Supabase and Google.
+  // Only the user GoTrue returns for this session counts: its identities say whether Google verified the email (checked in admitUser).
   const rules = { allowedDomains: config.google.allowedDomains, initialAdminEmail: config.initialAdminEmail };
   const admin = createAdminSupabase();
   const result = await admitUser(admin, data.user, rules).catch(() => "failed" as const);
