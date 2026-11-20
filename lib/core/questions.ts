@@ -12,7 +12,7 @@ export type Answer = { id: string; question: string; answer: string | string[] }
 export const answerMaxLength = 500;
 
 // Invisible characters go (soft hyphens, zero-width and bidi controls); other control characters become spaces.
-const invisible = /[­​-‏‪-‮⁠-⁤⁦-⁩﻿]/g;
+const invisible = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
 const control = /[\u0000-\u001f\u007f-\u009f]/g;
 const cut = (text: string, max: number) => Array.from(text).slice(0, max).join("").trim();
 

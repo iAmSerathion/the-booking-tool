@@ -16,7 +16,7 @@ import {
 } from "./booking";
 
 // Intl puts a narrow no-break space before AM/PM; tests compare with plain spaces.
-const plain = (text: string) => text.replace(/[  ]/g, " ");
+const plain = (text: string) => text.replace(/[\u202f\u00a0]/g, " ");
 
 describe("round robin", () => {
   it("takes the host without a booking first, otherwise the oldest last booking", () => {
@@ -42,7 +42,7 @@ describe("invitee details", () => {
   const ok = cleanBookingInput({ name: "Robin Example", email: "robin@example.com", privacy: "on" });
 
   it("cleans and caps the fields", () => {
-    expect(cleanBookingInput({ name: "  Robin​  Example ", email: " robin@example.com ", phone: 5, topic: "a\r\n\r\n\r\nb", privacy: true })).toEqual({
+    expect(cleanBookingInput({ name: "  Robin\u200b  Example ", email: " robin@example.com ", phone: 5, topic: "a\r\n\r\n\r\nb", privacy: true })).toEqual({
       name: "Robin Example",
       email: "robin@example.com",
       company: "",
