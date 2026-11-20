@@ -20,6 +20,7 @@ export async function admitUser(admin: SupabaseClient, user: User, rules: AdmitR
   if (google && email) {
     const access = decideAccess({
       email,
+      emailVerified: google.identity_data?.email_verified === true,
       hostedDomain: (google.identity_data?.custom_claims?.hd as string | undefined)?.toLowerCase() ?? null,
       profile: profile.data,
       ...rules,

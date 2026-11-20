@@ -3,6 +3,7 @@ import { type AccessInput, decideAccess } from "./access";
 
 const base: AccessInput = {
   email: "jane@example.com",
+  emailVerified: true,
   hostedDomain: null,
   profile: null,
   allowedDomains: [],
@@ -21,6 +22,13 @@ describe("decideAccess", () => {
     expect(decideAccess(inactive)).toBe("refuse");
     expect(decideAccess({ ...inactive, hostedDomain: "example.com", allowedDomains: ["example.com"] })).toBe("refuse");
     expect(decideAccess({ ...inactive, initialAdminEmail: base.email, hasActiveAdmin: false })).toBe("refuse");
+  });
+
+  it("never creates a profile for an unverified email, but lets existing members in", () => {
+    const unverified = { ...base, emailVerified: false };
+    expect(decideAccess({ ...unverified, initialAdminEmail: base.email, hasActiveAdmin: false })).toBe("refuse");
+    expect(decideAccess({ ...unverified, hostedDomain: "example.com", allowedDomains: ["example.com"] })).toBe("refuse");
+    expect(decideAccess({ ...unverified, profile: { active: true } })).toBe("ok");
   });
 
   it("is invite-only when no domains are allowed", () => {

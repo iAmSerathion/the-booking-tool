@@ -1,6 +1,7 @@
 // Who may use the app after signing in with Google. Pure; /auth/callback gathers the inputs.
 export type AccessInput = {
-  email: string; // verified by Google, lowercase
+  email: string; // lowercase
+  emailVerified: boolean; // Google's email_verified; anything but true (also missing) never creates a profile
   hostedDomain: string | null; // Google's "hd" claim: the Workspace domain, absent for consumer accounts
   profile: { active: boolean } | null;
   allowedDomains: string[]; // ALLOWED_GOOGLE_DOMAINS, lowercase
@@ -13,6 +14,8 @@ export type Access = "ok" | "create-member" | "create-admin" | "refuse";
 export function decideAccess(input: AccessInput): Access {
   // A deactivated member stays out; only an admin can bring them back.
   if (input.profile) return input.profile.active ? "ok" : "refuse";
+  // GoTrue admits an unverified Google email when "Confirm email" is off, so the flag is checked here.
+  if (!input.emailVerified) return "refuse";
   if (input.initialAdminEmail === input.email && !input.hasActiveAdmin) return "create-admin";
   // The hd claim, not the email domain: a consumer Google account can carry a company address (e.g. a former employee's).
   if (input.hostedDomain && input.allowedDomains.includes(input.hostedDomain)) return "create-member";

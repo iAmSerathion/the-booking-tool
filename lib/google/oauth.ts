@@ -103,7 +103,7 @@ export function idTokenEmail(idToken: string | undefined): string | null {
   if (!payload) return null;
   try {
     const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { email?: unknown; email_verified?: unknown };
-    return typeof claims.email === "string" && claims.email_verified !== false ? claims.email.toLowerCase() : null;
+    return typeof claims.email === "string" && claims.email_verified === true ? claims.email.toLowerCase() : null;
   } catch {
     return null;
   }

@@ -11,11 +11,11 @@ import { admin, adminEmail, hostEmail } from "./session";
 
 const created: string[] = [];
 
-async function googleUser(email: string, hd?: string): Promise<User> {
+async function googleUser(email: string, hd?: string, verified = true): Promise<User> {
   const { data, error } = await admin().auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name: "New Person" } });
   if (error) throw error;
   created.push(data.user.id);
-  return { ...data.user, identities: [{ provider: "google", identity_data: hd ? { custom_claims: { hd } } : {} }] } as User;
+  return { ...data.user, identities: [{ provider: "google", identity_data: { email_verified: verified, ...(hd ? { custom_claims: { hd } } : {}) } }] } as User;
 }
 
 async function existingUser(email: string): Promise<User> {
@@ -74,6 +74,13 @@ test("keeps deactivated members out, even from an allowed domain", async () => {
   await admin().from("profiles").insert({ id: user.id, name: "Gone", email, active: false });
   expect(await admitUser(admin(), user, { allowedDomains: ["example.com"], initialAdminEmail: email })).toBe("out");
   expect((await profileOf(user.id))?.active).toBe(false);
+});
+
+test("refuses an unverified Google email, even from an allowed domain or as the initial admin", async () => {
+  const email = unique();
+  const user = await googleUser(email, "example.com", false);
+  expect(await admitUser(admin(), user, { allowedDomains: ["example.com"], initialAdminEmail: email })).toBe("stranger");
+  expect(await profileOf(user.id)).toBeNull();
 });
 
 test("refuses users without a Google identity", async () => {
