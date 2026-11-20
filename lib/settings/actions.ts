@@ -1,9 +1,9 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { signedIn } from "@/lib/auth/member";
 import { parseRules, parseWindows, timeZones, weekdays } from "@/lib/core/settings";
 import { createAdminSupabase } from "@/lib/db/admin";
-import { createSupabase } from "@/lib/db/server";
 import { revokeToken } from "@/lib/google/oauth";
 
 // What a settings form shows after saving: an inline error, or a short confirmation.
@@ -12,18 +12,6 @@ export type ActionState = { error: string | null; saved: boolean };
 const saved: ActionState = { error: null, saved: true };
 const failed = (error: string): ActionState => ({ error, saved: false });
 const generic = "Saving failed. Please try again.";
-
-// Every action works on the signed-in member only; no id comes from the form, and RLS applies to every write.
-async function signedIn() {
-  const supabase = await createSupabase();
-  const { data } = await supabase.auth.getClaims();
-  const userId = data?.claims?.sub;
-  if (!userId) throw new Error("Not signed in");
-  // RLS hides inactive profiles: deactivated members cannot change anything.
-  const { data: profile } = await supabase.from("profiles").select("id").eq("id", userId).maybeSingle();
-  if (!profile) throw new Error("No access");
-  return { supabase, userId };
-}
 
 // Give the grant back to Google (best effort), then delete the token and the connection row.
 export async function disconnectCalendar(): Promise<ActionState> {
