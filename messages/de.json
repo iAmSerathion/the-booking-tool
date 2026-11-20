@@ -12,6 +12,12 @@
   "booking.error.privacy": "Bitte bestätige, dass du die Datenschutzhinweise gelesen hast.",
   "booking.error.answerRequired": "Bitte beantworte diese Frage.",
   "booking.error.answerInvalid": "Bitte wähl eine der Antworten.",
-  "booking.error.already": "Du hast schon einen Termin am {when}.",
-  "booking.slotRange": "{day}, {start} bis {end}"
+  "booking.error.already": "Du hast schon einen kommenden Termin dieser Art. Die Einladung ist in deinen E-Mails.",
+  "booking.slotRange": "{day}, {start} bis {end}",
+  "booking.error.taken": "Diese Zeit ist gerade vergeben. Bitte wähl eine andere.",
+  "booking.error.failed": "Das hat nicht geklappt, es ist nichts gebucht. Bitte versuch es noch einmal.",
+  "booking.error.tooMany": "Zu viele Versuche. Bitte warte eine Minute und versuch es dann noch einmal.",
+  "booking.error.linkInvalid": "Dieser Buchungslink kann nicht mehr verwendet werden.",
+  "booking.eventSummary": "{event}: {invitee} und {host}",
+  "booking.eventDescription": "Details zur Buchung: {link}"
 }

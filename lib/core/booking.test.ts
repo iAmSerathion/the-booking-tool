@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  alreadyBookedText,
   calendarMonths,
   cleanBookingInput,
   dayTitle,
+  eventSummary,
   formatTime,
   looksLikeBot,
   roundRobinOrder,
@@ -87,14 +87,12 @@ describe("times in the invitee's zone and locale", () => {
     expect(slotChip(start, end, "Europe/Berlin", "de")).toBe("Mi., 4. Nov., 10:30 bis 11:15");
     expect(slotLong(start, end, "Europe/Berlin", "de")).toBe("Mittwoch, 4. November 2026, 10:30 bis 11:15");
     expect(dayTitle("2026-11-04", "de")).toBe("Mittwoch, 4. November");
-    expect(alreadyBookedText(start, "Europe/Berlin", "de")).toBe("Du hast schon einen Termin am Mittwoch, 4. November um 10:30.");
   });
 
   it("English texts", () => {
     expect(plain(slotChip(start, end, "Europe/Berlin", "en"))).toBe("Wed, Nov 4, 10:30 AM to 11:15 AM");
     expect(plain(slotLong(start, end, "Europe/Berlin", "en"))).toBe("Wednesday, November 4, 2026, 10:30 AM to 11:15 AM");
     expect(dayTitle("2026-11-04", "en")).toBe("Wednesday, November 4");
-    expect(plain(alreadyBookedText(start, "Europe/Berlin", "en"))).toBe("You already have a booking on Wednesday, November 4 at 10:30 AM.");
   });
 
   it("shows the same instant in another zone, also across midnight", () => {
@@ -129,5 +127,18 @@ describe("times in the invitee's zone and locale", () => {
       [2027, 1],
     ]);
     expect(calendarMonths([], "2026-11-03")).toEqual([[2026, 11]]);
+  });
+});
+
+describe("eventSummary", () => {
+  const values = { event: "Meeting", invitee: "Ada Example", host: "Demo Host" };
+
+  it("fills the known placeholders and keeps everything else as typed", () => {
+    expect(eventSummary("{event}: {invitee} and {host}", values)).toBe("Meeting: Ada Example and Demo Host");
+    expect(eventSummary("Call {invitee} {brand} {{host}}", values)).toBe("Call Ada Example {brand} {Demo Host}");
+  });
+
+  it("does not expand placeholders inside the values", () => {
+    expect(eventSummary("{invitee} / {host}", { ...values, invitee: "{host}" })).toBe("{host} / Demo Host");
   });
 });

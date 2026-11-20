@@ -111,16 +111,18 @@ export function slotLong(start: Date, end: Date, timeZone: string, locale: Local
   return t(locale, "booking.slotRange", { day, start: formatTime(start, timeZone, locale), end: formatTime(end, timeZone, locale) });
 }
 
-// "You already have a booking on Wednesday, November 4, 10:30 AM." (duplicate check before a second booking).
-export function alreadyBookedText(startsAt: Date, timeZone: string, locale: Locale): string {
-  const when = format(locale, timeZone, { weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(startsAt);
-  return t(locale, "booking.error.already", { when });
-}
-
 // "Europe/Berlin (MEZ)" in German, "Europe/Berlin (GMT+1)" in English; the short name follows DST.
 export function timeZoneLabel(timeZone: string, at: Date, locale: Locale): string {
   const short = format(locale, timeZone, { timeZoneName: "short" })
     .formatToParts(at)
     .find((part) => part.type === "timeZoneName")?.value;
   return short ? `${timeZone} (${short})` : timeZone;
+}
+
+// The Google event title: the template from settings.event_summary_template, else the locale's default
+// (booking.eventSummary). {event}, {invitee} and {host} are filled; anything else stays as typed.
+export type SummaryValues = { event: string; invitee: string; host: string };
+
+export function eventSummary(template: string, values: SummaryValues): string {
+  return template.replace(/\{(event|invitee|host)\}/g, (_, name: keyof SummaryValues) => values[name]);
 }
