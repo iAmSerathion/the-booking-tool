@@ -7,9 +7,8 @@ const redirectUri = "http://127.0.0.1:3100/api/google/callback";
 const client = { client_id: "fake-client", client_secret: "fake-secret" };
 
 test.describe.configure({ mode: "serial" });
-test.beforeEach(async ({ request }) => {
-  await request.post(`${googleFakeUrl}/reset`);
-});
+// No /reset here: the fake is shared with the calendar and settings tests running in parallel, and a reset would wipe
+// their grants. Every test below uses this file's own emails instead.
 
 async function consent(request: import("@playwright/test").APIRequestContext, hint = email) {
   const auth = new URL(`${googleFakeUrl}/o/oauth2/v2/auth`);
