@@ -12,6 +12,12 @@
   "booking.error.privacy": "Please confirm that you have read the privacy notice.",
   "booking.error.answerRequired": "Please answer this question.",
   "booking.error.answerInvalid": "Please choose one of the answers.",
-  "booking.error.already": "You already have a booking on {when}.",
-  "booking.slotRange": "{day}, {start} to {end}"
+  "booking.error.already": "You already have an upcoming booking of this kind. The invitation is in your email.",
+  "booking.slotRange": "{day}, {start} to {end}",
+  "booking.error.taken": "This time was just taken. Please choose another.",
+  "booking.error.failed": "That did not work, nothing was booked. Please try again.",
+  "booking.error.tooMany": "Too many attempts. Please wait a minute and try again.",
+  "booking.error.linkInvalid": "This booking link can no longer be used.",
+  "booking.eventSummary": "{event}: {invitee} and {host}",
+  "booking.eventDescription": "Booking details: {link}"
 }
