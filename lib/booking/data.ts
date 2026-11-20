@@ -1,4 +1,5 @@
-import { loadOffer } from "@/lib/availability/data";
+import { loadAvailability, loadOffer } from "@/lib/availability/data";
+import { freeSlots, withoutBooking } from "@/lib/core/availability";
 import type { Question } from "@/lib/core/questions";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { hashToken, plausibleToken } from "./token";
@@ -92,8 +93,12 @@ export async function lastRoundRobinBookings(hostIds: readonly string[]): Promis
   return new Map(rows);
 }
 
+// Server only: hostId, googleEventId and inviteeEmail never go to the browser.
 export type Confirmation = {
   bookingId: string;
+  hostId: string;
+  googleEventId: string | null;
+  inviteeEmail: string;
   startsAt: string;
   endsAt: string;
   // The invitee's zone if they picked one, else the host's.
@@ -104,7 +109,7 @@ export type Confirmation = {
   state: "booked" | "cancelled";
 };
 
-const confirmationColumns = "id, starts_at, ends_at, state, meet_url, invitee_timezone, profiles(name, timezone), event_types(title)";
+const confirmationColumns = "id, host_id, google_event_id, invitee_email, starts_at, ends_at, state, meet_url, invitee_timezone, profiles(name, timezone), event_types(title)";
 
 // The booking behind an invitee token: the booking's own token (bookings.token_hash), else an extra link token
 // (booking_tokens, e.g. from a reminder mail in M8). Null for anything unknown.
@@ -127,6 +132,9 @@ export async function loadConfirmation(token: unknown): Promise<Confirmation | n
   const type = row.event_types as unknown as { title: string };
   return {
     bookingId: row.id,
+    hostId: row.host_id,
+    googleEventId: row.google_event_id,
+    inviteeEmail: row.invitee_email,
     startsAt: row.starts_at,
     endsAt: row.ends_at,
     timeZone: row.invitee_timezone ?? host.timezone,
@@ -135,4 +143,17 @@ export async function loadConfirmation(token: unknown): Promise<Confirmation | n
     meetUrl: row.meet_url,
     state: row.state,
   };
+}
+
+// The times a booking can move to: the same host, the booking's own duration (not the event type's current one), and
+// the booking itself neither blocking nor counting. Its current start is left out. The availability is returned too:
+// the reschedule action needs the primary calendar, zone, buffer and daily maximum. fresh: ask Google without the cache.
+export async function loadRescheduleOffer(booking: Pick<Confirmation, "hostId" | "startsAt" | "endsAt">, { fresh = false } = {}) {
+  const availability = await loadAvailability(createAdminSupabase(), booking.hostId, { fresh });
+  if (availability.state !== "ok") return { slots: [] as PublicSlot[], availability };
+  const own = { start: new Date(booking.startsAt), end: new Date(booking.endsAt) };
+  const slots = freeSlots({ ...withoutBooking(availability.input, own), durationMinutes: (own.end.getTime() - own.start.getTime()) / 60_000 })
+    .filter((slot) => slot.start.getTime() !== own.start.getTime())
+    .map((slot) => ({ start: slot.start.toISOString(), end: slot.end.toISOString() }));
+  return { slots, availability };
 }
