@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoogleError } from "./oauth";
-import { createEvent, deleteEvent, freeBusy, listEvents } from "./calendar";
+import { createEvent, deleteEvent, freeBusy, listEvents, moveEvent } from "./calendar";
 
 const env = {
   APP_URL: "https://booking.example.com",
@@ -153,5 +153,27 @@ describe("deleteEvent", () => {
   it("throws on other errors", async () => {
     stubFetch({ status: 500, body: {} });
     await expect(deleteEvent("token", "host@example.com", "e1")).rejects.toMatchObject({ code: "event_delete", status: 500 });
+  });
+});
+
+describe("moveEvent", () => {
+  const time = { start: new Date("2026-11-04T09:30:00Z"), end: new Date("2026-11-04T10:00:00Z"), timeZone: "Europe/Berlin" };
+
+  it("patches only the times and tells the guests", async () => {
+    stubFetch({ body: { id: "e/1" } });
+    await moveEvent("token", "host@example.com", "e/1", time);
+    expect(calls[0].init?.method).toBe("PATCH");
+    expect(calls[0].url).toBe("https://www.googleapis.com/calendar/v3/calendars/host%40example.com/events/e%2F1?sendUpdates=all");
+    expect(JSON.parse(String(calls[0].init?.body))).toEqual({
+      start: { dateTime: "2026-11-04T09:30:00.000Z", timeZone: "Europe/Berlin" },
+      end: { dateTime: "2026-11-04T10:00:00.000Z", timeZone: "Europe/Berlin" },
+    });
+  });
+
+  it("throws when Google refuses", async () => {
+    stubFetch({ status: 404, body: { error: { status: "NOT_FOUND" } } });
+    await expect(moveEvent("token", "host@example.com", "e1", time)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
+    stubFetch({ status: 503, body: "" });
+    await expect(moveEvent("token", "host@example.com", "e1", time)).rejects.toMatchObject({ code: "event_patch", status: 503 });
   });
 });

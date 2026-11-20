@@ -1,7 +1,7 @@
 import type { CalendarEvent } from "@/lib/core/availability";
 import { GoogleError, googleUrls } from "./oauth";
 
-// Google Calendar v3: the calendar list, free/busy, the events of extra busy calendars, and creating and deleting
+// Google Calendar v3: the calendar list, free/busy, the events of extra busy calendars, and creating, moving and deleting
 // booking events.
 
 export type CalendarEntry = { id: string; name: string; primary: boolean };
@@ -154,4 +154,22 @@ export async function deleteEvent(accessToken: string, calendarId: string, event
     cache: "no-store",
   });
   if (!response.ok && response.status !== 404 && response.status !== 410) throw new GoogleError("event_delete", response.status);
+}
+
+// Moves a booking event to a new time; guests, Meet and everything else stay. sendUpdates=all: the invitee gets the move
+// (and, on a rollback, the move back) from Google.
+export async function moveEvent(accessToken: string, calendarId: string, eventId: string, time: { start: Date; end: Date; timeZone: string }): Promise<void> {
+  const response = await fetch(`${eventsUrl(calendarId)}/${encodeURIComponent(eventId)}?${new URLSearchParams({ sendUpdates: "all" })}`, {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      start: { dateTime: time.start.toISOString(), timeZone: time.timeZone },
+      end: { dateTime: time.end.toISOString(), timeZone: time.timeZone },
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as EventResponse;
+    throw new GoogleError(data.error?.status ?? "event_patch", response.status);
+  }
 }
