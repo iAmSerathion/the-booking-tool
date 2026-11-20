@@ -10,12 +10,17 @@ Next.js (App Router), Supabase (Postgres, Auth, Vault), Google Calendar and Meet
 
 ## Local development
 
-Requirements: Node 24+, Docker, the [Supabase CLI](https://supabase.com/docs/guides/cli).
+Requirements: Node 24+ and Docker. The Supabase CLI comes pinned as a dev dependency (`npx supabase`).
 
 ```bash
 npm install
 cp .env.example .env.local   # fill in the values, see comments in the file
-npx supabase start           # prints the local Supabase URL and keys
+```
+
+The local Supabase needs the Google OAuth client too. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` into `supabase/.env` (ignored by git) or export them, then:
+
+```bash
+npx supabase start           # prints the local Supabase URL and keys for .env.local
 npm run dev
 ```
 
