@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoogleError } from "./oauth";
-import { freeBusy, listEvents } from "./calendar";
+import { createEvent, deleteEvent, freeBusy, listEvents } from "./calendar";
 
 const env = {
   APP_URL: "https://booking.example.com",
@@ -94,5 +94,63 @@ describe("listEvents", () => {
   it("throws on an HTTP error", async () => {
     stubFetch({ status: 404, body: { error: { status: "NOT_FOUND" } } });
     await expect(listEvents("token", "gone@example.com", from, to)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("createEvent", () => {
+  const event = {
+    bookingId: "b1",
+    summary: "Meeting: Ada and Host",
+    description: "Details",
+    start: new Date("2026-11-04T09:30:00Z"),
+    end: new Date("2026-11-04T10:00:00Z"),
+    timeZone: "Europe/Berlin",
+    attendees: [{ email: "ada@example.com", displayName: "Ada" }],
+  };
+
+  it("asks for a Meet conference and invites the guest", async () => {
+    stubFetch({ body: { id: "e1", hangoutLink: "https://meet.google.com/abc-defg-hij" } });
+    expect(await createEvent("token", "host#1@example.com", { ...event, meet: true })).toEqual({ id: "e1", meetUrl: "https://meet.google.com/abc-defg-hij" });
+    const url = new URL(calls[0].url);
+    expect(url.pathname).toBe("/calendar/v3/calendars/host%231%40example.com/events");
+    expect(Object.fromEntries(url.searchParams)).toEqual({ sendUpdates: "all", conferenceDataVersion: "1" });
+    expect(JSON.parse(String(calls[0].init?.body))).toMatchObject({
+      start: { dateTime: "2026-11-04T09:30:00.000Z", timeZone: "Europe/Berlin" },
+      attendees: event.attendees,
+      extendedProperties: { private: { booking_id: "b1" } },
+      conferenceData: { createRequest: { requestId: "b1", conferenceSolutionKey: { type: "hangoutsMeet" } } },
+    });
+  });
+
+  it("takes the Meet link from the video entry point, and none without meet", async () => {
+    stubFetch({ body: { id: "e1", conferenceData: { entryPoints: [{ entryPointType: "phone", uri: "tel:1" }, { entryPointType: "video", uri: "https://meet.google.com/x" }] } } });
+    expect((await createEvent("token", "host@example.com", { ...event, meet: true })).meetUrl).toBe("https://meet.google.com/x");
+    stubFetch({ body: { id: "e2" } });
+    expect(await createEvent("token", "host@example.com", { ...event, meet: false })).toEqual({ id: "e2", meetUrl: null });
+    expect(JSON.parse(String(calls[0].init?.body))).not.toHaveProperty("conferenceData");
+  });
+
+  it("throws when Google refuses or returns no id", async () => {
+    stubFetch({ status: 403, body: { error: { status: "PERMISSION_DENIED" } } });
+    await expect(createEvent("token", "host@example.com", { ...event, meet: false })).rejects.toMatchObject({ code: "PERMISSION_DENIED", status: 403 });
+    stubFetch({ body: {} });
+    await expect(createEvent("token", "host@example.com", { ...event, meet: false })).rejects.toMatchObject({ code: "event_insert" });
+  });
+});
+
+describe("deleteEvent", () => {
+  it("deletes with the given sendUpdates and treats a gone event as done", async () => {
+    stubFetch({ body: {} });
+    await deleteEvent("token", "host@example.com", "e/1", "none");
+    expect(calls[0].init?.method).toBe("DELETE");
+    expect(calls[0].url).toBe("https://www.googleapis.com/calendar/v3/calendars/host%40example.com/events/e%2F1?sendUpdates=none");
+    stubFetch({ status: 410, body: {} });
+    await deleteEvent("token", "host@example.com", "e1");
+    expect(new URL(calls[0].url).searchParams.get("sendUpdates")).toBe("all");
+  });
+
+  it("throws on other errors", async () => {
+    stubFetch({ status: 500, body: {} });
+    await expect(deleteEvent("token", "host@example.com", "e1")).rejects.toMatchObject({ code: "event_delete", status: 500 });
   });
 });
