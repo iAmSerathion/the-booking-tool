@@ -31,8 +31,15 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
       // Supabase keys come from the environment loaded above. APP_URL must be the exact origin the browser uses,
-      // or cookies set during OAuth redirects land on another host.
+      // or cookies set during OAuth redirects land on another host. The access settings are pinned too: next start
+      // would otherwise fill them from a developer's .env.local, and an empty string counts as set (parseConfig
+      // reads it as unset).
       env: {
+        REQUIRE_SAME_GOOGLE_EMAIL: "false",
+        GOOGLE_HOSTED_DOMAIN: "",
+        ALLOWED_GOOGLE_DOMAINS: "",
+        INITIAL_ADMIN_EMAIL: "",
+        TRUST_PROXY_HEADERS: "",
         APP_URL: baseURL,
         GOOGLE_FAKE_URL: googleFakeUrl,
         GOOGLE_CLIENT_ID: "fake-client",

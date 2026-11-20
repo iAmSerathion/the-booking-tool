@@ -56,7 +56,7 @@ export async function setBusyCalendars(_state: ActionState, form: FormData): Pro
   return saved;
 }
 
-// One text field per weekday (day-1 … day-7). All days are checked before anything is written.
+// One text field per weekday (day-1 … day-7). All days are checked first, then saved in one go.
 export async function saveAvailability(_state: ActionState, form: FormData): Promise<ActionState> {
   const { supabase } = await signedIn();
   const days = [];
@@ -65,10 +65,9 @@ export async function saveAvailability(_state: ActionState, form: FormData): Pro
     if ("error" in parsed) return failed(`${name}: ${parsed.error}`);
     days.push(parsed.windows);
   }
-  for (const [index, windows] of days.entries()) {
-    const { error } = await supabase.rpc("set_availability_day", { p_weekday: index + 1, p_windows: windows });
-    if (error) return failed(error.code === "23514" ? `${weekdays[index]}: the time windows overlap.` : generic);
-  }
+  // One call, one transaction: the week is saved completely or not at all.
+  const { error } = await supabase.rpc("set_availability_week", { p_days: days });
+  if (error) return failed(error.code === "23514" ? "Some time windows overlap." : generic);
   refresh();
   return saved;
 }

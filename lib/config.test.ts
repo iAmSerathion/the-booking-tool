@@ -24,6 +24,14 @@ const problems = (env: Record<string, string>) => {
 };
 
 describe("parseConfig", () => {
+  it("treats empty or blank access settings as unset", () => {
+    const blank = { ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "", GOOGLE_HOSTED_DOMAIN: "", ALLOWED_GOOGLE_DOMAINS: "", INITIAL_ADMIN_EMAIL: " ", TRUST_PROXY_HEADERS: "" };
+    const config = parseConfig(blank);
+    expect(config.google).toMatchObject({ requireSameEmail: false, hostedDomain: null, allowedDomains: [] });
+    expect(config.initialAdminEmail).toBeNull();
+    expect(config.trustProxyHeaders).toBe(false);
+  });
+
   it("reads a minimal valid environment with defaults", () => {
     const config = parseConfig(valid);
     expect(config.appUrl).toBe("https://booking.example.com");
