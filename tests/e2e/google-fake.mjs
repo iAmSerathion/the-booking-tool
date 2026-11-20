@@ -11,12 +11,15 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.GOOGLE_FAKE_PORT ?? 3999);
 
-let granted, invalid, otherAccount, busy, counter;
+let granted, invalid, otherAccount, busy, counter, deny, onlyScope, failExchange;
 const reset = () => {
   granted = new Map(); // email -> granted scopes
   invalid = new Set(); // emails whose refresh tokens Google no longer accepts
   otherAccount = new Map(); // login_hint -> email the next consent signs in with instead
   busy = new Map(); // calendar id -> [{ start, end }] ISO instants
+  deny = new Set(); // login_hints whose next consent is cancelled
+  onlyScope = new Map(); // login_hint -> the only scope the next consent grants
+  failExchange = new Set(); // emails whose next code exchange fails
   counter = 0;
 };
 reset();
@@ -53,6 +56,8 @@ createServer(async (req, res) => {
   const post = req.method === "POST";
 
   if (url.pathname === "/health") return json(res, 200, { ok: true });
+  // Wipes every email's state. The fake is shared by all parallel workers, so tests must not call this; they use their
+  // own emails instead.
   if (url.pathname === "/reset" && post) {
     reset();
     return json(res, 200, {});
@@ -66,8 +71,10 @@ createServer(async (req, res) => {
     const email = otherAccount.get(hint) ?? hint;
     otherAccount.delete(hint);
     const back = new URL(redirectUri);
-    back.searchParams.set("code", encode({ email, scope: url.searchParams.get("scope") ?? "", redirectUri }));
     back.searchParams.set("state", url.searchParams.get("state") ?? "");
+    if (deny.delete(hint)) back.searchParams.set("error", "access_denied");
+    else back.searchParams.set("code", encode({ email, scope: onlyScope.get(hint) ?? url.searchParams.get("scope") ?? "", redirectUri }));
+    onlyScope.delete(hint);
     res.writeHead(302, { location: back.toString() });
     return res.end();
   }
@@ -79,6 +86,7 @@ createServer(async (req, res) => {
       const code = decode(body.get("code"));
       // Google rejects a token request whose redirect_uri differs from the one used for consent.
       if (!code?.email || code.redirectUri !== body.get("redirect_uri")) return json(res, 400, { error: "invalid_grant" });
+      if (failExchange.delete(code.email)) return json(res, 500, { error: "backend_error" });
       const scopes = new Set([...(granted.get(code.email) ?? []), ...code.scope.split(" ").filter(Boolean)]);
       granted.set(code.email, scopes);
       invalid.delete(code.email);
@@ -138,6 +146,18 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/control/other-account" && post) {
     otherAccount.set(url.searchParams.get("hint"), url.searchParams.get("email"));
+    return json(res, 200, {});
+  }
+  if (url.pathname === "/control/deny" && post) {
+    deny.add(url.searchParams.get("hint"));
+    return json(res, 200, {});
+  }
+  if (url.pathname === "/control/only-scope" && post) {
+    onlyScope.set(url.searchParams.get("hint"), url.searchParams.get("scope"));
+    return json(res, 200, {});
+  }
+  if (url.pathname === "/control/fail-exchange" && post) {
+    failExchange.add(url.searchParams.get("email"));
     return json(res, 200, {});
   }
   if (url.pathname === "/control/granted") return json(res, 200, { scopes: [...(granted.get(url.searchParams.get("email")) ?? [])] });

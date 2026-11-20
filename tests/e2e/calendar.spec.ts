@@ -110,6 +110,56 @@ test("without REQUIRE_SAME_GOOGLE_EMAIL a different Google account may be connec
   }
 });
 
+test("reconnecting with another Google account drops the old account's busy calendars", async ({ page, context, baseURL }) => {
+  const member = await newMember();
+  const other = `other-${randomUUID()}@example.com`;
+  try {
+    await signInAs(context, baseURL!, member.email);
+    await connect(page);
+    const calendar = page.getByRole("region", { name: "Google Calendar" });
+    await calendar.getByRole("checkbox", { name: "Holidays" }).check();
+    await calendar.getByRole("button", { name: "Save busy calendars" }).click();
+    await expect.poll(async () => (await connection(member.id))?.busy_calendar_ids).toEqual([member.email, holidays]);
+
+    await fake(`/control/other-account?hint=${encodeURIComponent(member.email)}&email=${encodeURIComponent(other)}`);
+    await page.goto("/api/google/connect");
+    await expect(page.getByText(`Connected with ${other}`)).toBeVisible();
+    expect(await connection(member.id)).toMatchObject({ account_email: other, primary_calendar_id: other, busy_calendar_ids: [other] });
+    await expect(calendar.getByRole("checkbox", { name: "Holidays" })).not.toBeChecked();
+  } finally {
+    await removeMember(member.id);
+  }
+});
+
+// Each refusal leaves nothing behind: no connection row, no token, and the grant is given back to Google.
+const refusals = [
+  { name: "cancelled consent", control: (email: string) => `/control/deny?hint=${email}`, notice: "Connecting Google Calendar was cancelled.", revoked: false },
+  {
+    name: "a grant without calendar access",
+    control: (email: string) => `/control/only-scope?hint=${email}&scope=openid%20email`,
+    notice: "Google did not grant calendar access. Connect again and allow access to your calendar.",
+    revoked: true,
+  },
+  { name: "a failing token exchange", control: (email: string) => `/control/fail-exchange?email=${email}`, notice: "Connecting Google Calendar failed. Please try again.", revoked: false },
+];
+for (const refusal of refusals) {
+  test(`${refusal.name} connects nothing and says why`, async ({ page, context, baseURL }) => {
+    const member = await newMember();
+    try {
+      await signInAs(context, baseURL!, member.email);
+      await fake(refusal.control(encodeURIComponent(member.email)));
+      await page.goto("/app/settings");
+      await page.getByRole("link", { name: "Connect Google Calendar" }).click();
+      await expect(page.getByRole("region", { name: "Google Calendar" }).getByRole("alert")).toHaveText(refusal.notice);
+      expect(await connection(member.id)).toBeNull();
+      expect(await refreshToken(member.id)).toBeNull();
+      if (refusal.revoked) expect(await fake(`/control/granted?email=${encodeURIComponent(member.email)}`, "GET")).toEqual({ scopes: [] });
+    } finally {
+      await removeMember(member.id);
+    }
+  });
+}
+
 test("a callback without the matching state cookie is refused", async ({ page, context, baseURL }) => {
   const member = await newMember();
   try {
