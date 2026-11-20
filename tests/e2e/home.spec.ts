@@ -12,3 +12,10 @@ test("pages outside /widget cannot be framed", async ({ request }) => {
   expect(response.headers()["content-security-policy"]).toBe("frame-ancestors 'none'");
   expect(response.headers()["x-frame-options"]).toBe("DENY");
 });
+
+test("every response sends baseline security headers", async ({ request }) => {
+  const headers = (await request.get("/")).headers();
+  expect(headers["x-content-type-options"]).toBe("nosniff");
+  expect(headers["referrer-policy"]).toBe("strict-origin-when-cross-origin");
+  expect(headers["x-powered-by"]).toBeUndefined();
+});
