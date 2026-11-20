@@ -60,10 +60,14 @@ export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, even
     startedAt.current = Date.now();
   }, []);
 
+  // The zone list and its Intl names depend on the browser's ICU data, which the server cannot know: until mounted (server
+  // render and hydration) the select has only the current zone under its bare id, afterwards every zone with its name.
+  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
   const zones = useMemo(() => {
+    if (!mounted) return [timeZone];
     const all = Intl.supportedValuesOf("timeZone");
     return all.includes(timeZone) ? all : [timeZone, ...all];
-  }, [timeZone]);
+  }, [mounted, timeZone]);
   const byDay = useMemo(() => slotsByCustomerDay(slots.map((s) => s.start), timeZone), [slots, timeZone]);
   const months = calendarMonths([...byDay.keys()], zonedDay(new Date(now), timeZone));
   const [year, month] = months[Math.min(monthIndex, months.length - 1)];
@@ -138,7 +142,7 @@ export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, even
           <select value={timeZone} onChange={(e) => setChosenZone(e.target.value)} className={styles.input}>
             {zones.map((zone) => (
               <option key={zone} value={zone}>
-                {timeZoneLabel(zone, new Date(now), locale)}
+                {mounted ? timeZoneLabel(zone, new Date(now), locale) : zone}
               </option>
             ))}
           </select>
@@ -326,6 +330,7 @@ function QuestionField({
             type={question.type === "multi" ? "checkbox" : "radio"}
             name={id}
             data-field={i === 0 ? id : undefined}
+            {...invalid}
             checked={question.type === "multi" ? picked.includes(choice) : value === choice}
             onChange={(e) =>
               onChange(question.type === "multi" ? (e.target.checked ? [...picked, choice] : picked.filter((c) => c !== choice)) : choice)
