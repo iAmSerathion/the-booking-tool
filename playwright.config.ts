@@ -15,7 +15,11 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL, trace: "retain-on-failure" },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    { name: "chromium", testIgnore: /bootstrap\.spec/, use: { ...devices["Desktop Chrome"] } },
+    // Switches the seeded admins off for a moment, so it starts only after every other spec is done.
+    { name: "bootstrap", testMatch: /bootstrap\.spec/, dependencies: ["chromium"], use: { ...devices["Desktop Chrome"] } },
+  ],
   webServer: [
     {
       command: "node tests/e2e/google-fake.mjs",
