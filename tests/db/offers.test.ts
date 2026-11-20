@@ -425,6 +425,51 @@ describe("booking links", () => {
       expect(await visible(member)).toBe(0);
     }));
 
+  it("hosts revoke their own links, admins any; revoking twice or a foreign link does nothing", () =>
+    rollback(async (client) => {
+      const { admin, host, member, eventType } = await team(client);
+      const link = (n: number, owner: string) => scalar<string>(client, `${insertLink} returning id`, [hash(n), owner, eventType]);
+      const own = await link(1, host);
+      const adminLink = await link(2, admin);
+      const byAdmin = await link(3, host);
+      const revoke = async (user: string | null, id: string) => {
+        await client.query("savepoint revoke");
+        if (user) await actAs(client, "authenticated", user);
+        else await actAs(client, "anon");
+        try {
+          return await scalar<boolean>(client, "select public.revoke_booking_link($1)", [id]);
+        } catch (error) {
+          return (error as { code: string }).code;
+        } finally {
+          await client.query("rollback to savepoint revoke");
+        }
+      };
+      const revoked = (id: string) => scalar<boolean>(client, "select revoked_at is not null from public.booking_links where id = $1", [id]);
+
+      expect(await revoke(member, own)).toBe(false);
+      expect(await revoke(host, adminLink)).toBe(false);
+      expect(await revoke(null, own)).toBe("42501");
+      expect(await revoked(own)).toBe(false);
+
+      // Without the savepoint, so the revoke stays.
+      await actAs(client, "authenticated", host);
+      expect(await scalar(client, "select public.revoke_booking_link($1)", [own])).toBe(true);
+      expect(await scalar(client, "select public.revoke_booking_link($1)", [own])).toBe(false);
+      // Members still cannot write the column directly.
+      expect((await sqlError(client, "update public.booking_links set revoked_at = null")).code).toBe("42501");
+      await client.query("reset role");
+      await actAs(client, "authenticated", admin);
+      expect(await scalar(client, "select public.revoke_booking_link($1)", [byAdmin])).toBe(true);
+      await client.query("reset role");
+      expect(await revoked(own)).toBe(true);
+      expect(await revoked(byAdmin)).toBe(true);
+
+      // A deactivated admin can no longer revoke.
+      await client.query("update public.profiles set active = false where id = $1", [admin]);
+      expect(await revoke(admin, adminLink)).toBe(false);
+      expect(await revoked(adminLink)).toBe(false);
+    }));
+
   it("checks token hash, json shapes and expiry", () =>
     rollback(async (client) => {
       const { host, eventType } = await team(client);
