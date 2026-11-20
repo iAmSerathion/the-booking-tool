@@ -391,12 +391,46 @@ describe("create_booking", () => {
       await book(client, { host, eventType, starts: at(14), ends: at(14, 30), booked_via: "link", link_id: reusable });
       await book(client, { host, eventType, starts: at(15), ends: at(15, 30), booked_via: "link", link_id: reusable });
 
+      // A revoked link is closed even though it is reusable and not expired.
+      await client.query("reset role");
+      await client.query("update public.booking_links set revoked_at = now() where id = $1", [reusable]);
+      await actAs(client, "service_role");
+      const revokedHold = await hold(client, host, at(15, 30), at(16));
+      expect((await sqlError(client, createSql, [revokedHold, viaLink(at(15, 30), at(16), reusable)])).code).toBe("P0004");
+      await client.query("reset role");
+      await client.query("update public.booking_links set revoked_at = null where id = $1", [reusable]);
+      await actAs(client, "service_role");
+
       await client.query("reset role");
       await client.query("update public.profiles set bookable = false where id = $1", [host]);
       await actAs(client, "service_role");
       const holdId = await hold(client, host, at(16), at(16, 30));
       // The host check under the host lock comes before the link check.
       expect((await sqlError(client, createSql, [holdId, viaLink(at(16), at(16, 30), reusable)])).code).toBe("P0002");
+    }));
+});
+
+describe("booking_event_payload", () => {
+  it("carries the link id and metadata on every outbox row of a link booking, null without a link", () =>
+    rollback(async (client) => {
+      const { host, eventType } = await team(client);
+      const linkId = await scalar<string>(
+        client,
+        "insert into public.booking_links (token_hash, host_id, event_type_id, metadata) values ($1, $2, $3, $4) returning id",
+        [hash(1), host, eventType, JSON.stringify({ campaign: "spring", ref: "42" })],
+      );
+      await actAs(client, "service_role");
+      const viaLink = await book(client, { host, eventType, starts: at(9), ends: at(9, 30), booked_via: "link", link_id: linkId });
+      const viaPage = await book(client, { host, eventType, starts: at(11), ends: at(11, 30) });
+      await client.query("select public.cancel_booking($1, 'invitee', null)", [viaLink]);
+
+      const link = { id: linkId, metadata: { campaign: "spring", ref: "42" } };
+      expect((await outbox(client, viaLink)).map((e) => [e.type, e.payload.link])).toEqual([
+        ["booking.created", link],
+        ["booking.cancelled", link],
+      ]);
+      const [created] = await outbox(client, viaPage);
+      expect(created.payload).toHaveProperty("link", null);
     }));
 });
 
