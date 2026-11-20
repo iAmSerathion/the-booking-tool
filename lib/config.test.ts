@@ -56,7 +56,7 @@ describe("parseConfig", () => {
       BRAND_LOGO_URL: "http://example.com/logo.png",
     });
     expect(list).toEqual([
-      "APP_URL must be an origin without a path",
+      "APP_URL must be an origin only (no path, query, fragment or credentials)",
       "SMTP_URL must be a smtp: or smtps: URL",
       "BRAND_LOGO_URL must be a https: URL",
       "SCHEDULER_SECRET must be at least 32 characters",
@@ -76,6 +76,20 @@ describe("parseConfig", () => {
   it("normalizes allowed Google domains", () => {
     expect(parseConfig({ ...valid, ALLOWED_GOOGLE_DOMAINS: " Example.com, ,other.org " }).google.allowedDomains).toEqual(["example.com", "other.org"]);
   });
+});
+
+describe("APP_URL", () => {
+  it.each(["https://booking.example.com/?x=1", "https://booking.example.com/#a", "https://user:pw@booking.example.com"])("rejects %s", (APP_URL) => {
+    expect(problems({ ...valid, APP_URL })).toEqual(["APP_URL must be an origin only (no path, query, fragment or credentials)"]);
+  });
+
+  it("keeps a port", () => {
+    expect(parseConfig({ ...valid, APP_URL: "http://localhost:3000" }).appUrl).toBe("http://localhost:3000");
+  });
+});
+
+it("stores the canonical time zone name", () => {
+  expect(parseConfig({ ...valid, DEFAULT_TIMEZONE: "europe/berlin" }).timeZone).toBe("Europe/Berlin");
 });
 
 describe("layout helpers", () => {
