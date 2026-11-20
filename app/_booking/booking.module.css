@@ -1,0 +1,280 @@
+/* Public booking pages. One column on phones, picker and form side by side from 900px. */
+.frame {
+  --line: #c9c9c9;
+  --accent: #1f4fd1;
+  --accent-text: #fff;
+  --muted: #555;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #fff;
+}
+
+.frame :focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.header,
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.header {
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 600;
+}
+
+.logo {
+  height: 2rem;
+  width: auto;
+}
+
+.footer {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+
+.main {
+  width: 100%;
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.layout {
+  display: grid;
+  gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 3rem;
+  }
+  .intro {
+    grid-column: 1 / -1;
+  }
+}
+
+.intro h1 {
+  margin: 0 0 0.5rem;
+}
+
+.factList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  color: var(--muted);
+}
+
+.picker,
+.form {
+  min-width: 0;
+}
+
+.picker h2,
+.form h2 {
+  margin-top: 0;
+}
+
+.field {
+  margin-bottom: 1rem;
+}
+
+.label {
+  display: block;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.field .label,
+.fieldset .label {
+  margin-bottom: 0.25rem;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  min-height: 2.75rem;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid #888;
+  border-radius: 0.4rem;
+  font: inherit;
+  background: #fff;
+}
+
+.input[aria-invalid="true"] {
+  border-color: #b3261e;
+}
+
+.fieldset {
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+
+.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-height: 2.75rem;
+  padding-top: 0.6rem;
+  box-sizing: border-box;
+}
+
+.check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.1rem 0 0;
+  flex: none;
+}
+
+.monthBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.monthBar h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.nav,
+.day,
+.time,
+.submit {
+  min-height: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  background: #fff;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.nav {
+  min-width: 2.75rem;
+  font-size: 1.25rem;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.day {
+  padding: 0;
+}
+
+.day:disabled,
+.nav:disabled {
+  border-color: transparent;
+  color: #9a9a9a;
+  cursor: default;
+}
+
+.day:not(:disabled) {
+  font-weight: 600;
+}
+
+.day[aria-pressed="true"],
+.time[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.times {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: 0.5rem;
+}
+
+.chosen {
+  min-height: 1.5rem;
+  font-weight: 600;
+}
+
+.submit {
+  width: 100%;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.submit:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.error {
+  margin: 0.25rem 0 0;
+  color: #b3261e;
+}
+
+.alert {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: #fdecec;
+  color: #8a1c1c;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* Off screen, not display:none, so simple bots still fill it in. */
+.trap {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.confirm {
+  max-width: 40rem;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.5rem 1.5rem;
+}
+
+.facts dt {
+  font-weight: 600;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
