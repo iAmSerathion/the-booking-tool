@@ -13,12 +13,16 @@
     "test:e2e": "playwright test",
     "db:test": "bash scripts/db-test.sh",
     "test:db": "vitest run --config vitest.db.config.ts",
-    "db:lint": "bash scripts/db-lint.sh"
+    "db:lint": "bash scripts/db-lint.sh",
+    "stack:up": "bash scripts/stack/up.sh",
+    "stack:down": "bash scripts/stack/down.sh"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@supabase/ssr": "0.12.7",
+    "@supabase/supabase-js": "2.118.0",
     "next": "16.4.6",
     "react": "19.3.0",
     "react-dom": "19.3.0"

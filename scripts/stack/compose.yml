@@ -1,0 +1,89 @@
+# Local Supabase for development and e2e tests: Postgres, GoTrue (auth), PostgREST and a Kong gateway.
+# Started by scripts/stack/up.sh (npm run stack:up). Every published port is bound to 127.0.0.1 on purpose:
+# Docker Desktop ignores the daemon "ip" setting, and `supabase start` would publish on 0.0.0.0.
+# Ports 54420-54429 match supabase/config.toml, so CI (`supabase start`) and local runs use the same URLs.
+name: tbt-stack
+
+x-jwt: &jwt ${JWT_SECRET:?run scripts/stack/up.sh, which generates JWT_SECRET}
+
+services:
+  db:
+    image: public.ecr.aws/supabase/postgres:17.11.0.006
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports: ["127.0.0.1:54422:5432"]
+    volumes: ["./roles.sql:/etc/postgresql.schema.sql:ro"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  auth:
+    image: public.ecr.aws/supabase/gotrue:v2.197.0
+    depends_on: { db: { condition: service_healthy } }
+    # The Postgres image restarts once after its init scripts; GoTrue exits if it loses the connection meanwhile.
+    restart: on-failure
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0 # inside the container network only; not published
+      GOTRUE_API_PORT: "9999"
+      API_EXTERNAL_URL: http://127.0.0.1:54421/auth/v1
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgresql://supabase_auth_admin:postgres@db:5432/postgres
+      GOTRUE_SITE_URL: http://127.0.0.1:3100
+      GOTRUE_URI_ALLOW_LIST: http://127.0.0.1:3100/auth/callback,http://localhost:3000/auth/callback,http://127.0.0.1:3000/auth/callback
+      GOTRUE_JWT_SECRET: *jwt
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "false"
+      # Same as supabase/config.toml: no email sign-up. Tests still create sessions with admin.generateLink.
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_RATE_LIMIT_VERIFY: "300"
+      GOTRUE_RATE_LIMIT_TOKEN_REFRESH: "300"
+      # GoTrue always talks to accounts.google.com for this provider (it ignores GOTRUE_EXTERNAL_GOOGLE_URL), so the
+      # e2e login uses magic-link sessions (tests/e2e/session.ts). Enabled so the app can start the redirect.
+      GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
+      # Export GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before `npm run stack:up` to sign in by hand (see README).
+      GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-fake-client}
+      GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-fake-secret}
+      GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: http://127.0.0.1:54421/auth/v1/callback
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9999/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+
+  rest:
+    image: public.ecr.aws/supabase/postgrest:v14.18
+    depends_on: { db: { condition: service_healthy } }
+    restart: on-failure
+    environment:
+      PGRST_DB_URI: postgresql://authenticator:postgres@db:5432/postgres
+      PGRST_DB_SCHEMAS: public,graphql_public
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_JWT_SECRET: *jwt
+
+  kong:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    depends_on: [auth, rest]
+    ports: ["127.0.0.1:54421:8000"]
+    volumes: ["./kong.yml:/home/kong/kong.yml:ro"]
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors
+      # Supabase auth cookies make large headers; Kong's defaults are too small.
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 2s
+      timeout: 5s
+      retries: 60

@@ -3,7 +3,7 @@ import { ConfigError, parseConfig, readBrandName, readLocale } from "./config";
 
 const valid = {
   APP_URL: "https://booking.example.com/",
-  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54421",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
   SUPABASE_SERVICE_ROLE_KEY: "service",
   GOOGLE_CLIENT_ID: "client",
@@ -24,6 +24,14 @@ const problems = (env: Record<string, string>) => {
 };
 
 describe("parseConfig", () => {
+  it("treats empty or blank access settings as unset", () => {
+    const blank = { ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "", GOOGLE_HOSTED_DOMAIN: "", ALLOWED_GOOGLE_DOMAINS: "", INITIAL_ADMIN_EMAIL: " ", TRUST_PROXY_HEADERS: "" };
+    const config = parseConfig(blank);
+    expect(config.google).toMatchObject({ requireSameEmail: false, hostedDomain: null, allowedDomains: [] });
+    expect(config.initialAdminEmail).toBeNull();
+    expect(config.trustProxyHeaders).toBe(false);
+  });
+
   it("reads a minimal valid environment with defaults", () => {
     const config = parseConfig(valid);
     expect(config.appUrl).toBe("https://booking.example.com");
@@ -34,6 +42,10 @@ describe("parseConfig", () => {
     expect(config.trustProxyHeaders).toBe(false);
     expect(config.bookingAttemptsPerMinute).toBe(10);
     expect(config.webhook).toBeNull();
+    expect(config.google.hostedDomain).toBeNull();
+    expect(config.initialAdminEmail).toBeNull();
+    expect(config.google.requireSameEmail).toBe(false);
+    expect(config.google.fakeUrl).toBeNull();
   });
 
   it("lists every missing required variable at once", () => {
@@ -75,6 +87,37 @@ describe("parseConfig", () => {
 
   it("normalizes allowed Google domains", () => {
     expect(parseConfig({ ...valid, ALLOWED_GOOGLE_DOMAINS: " Example.com, ,other.org " }).google.allowedDomains).toEqual(["example.com", "other.org"]);
+  });
+});
+
+describe("sign-in settings", () => {
+  it("lowercases the initial admin email and hosted domain", () => {
+    const config = parseConfig({ ...valid, INITIAL_ADMIN_EMAIL: " Admin@Example.com ", GOOGLE_HOSTED_DOMAIN: "Example.com" });
+    expect(config.initialAdminEmail).toBe("admin@example.com");
+    expect(config.google.hostedDomain).toBe("example.com");
+  });
+
+  it("rejects an initial admin that is not an email address", () => {
+    expect(problems({ ...valid, INITIAL_ADMIN_EMAIL: "admin" })).toEqual(["INITIAL_ADMIN_EMAIL must be an email address"]);
+  });
+});
+
+describe("Google calendar settings", () => {
+  it("reads REQUIRE_SAME_GOOGLE_EMAIL", () => {
+    expect(parseConfig({ ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "true" }).google.requireSameEmail).toBe(true);
+    expect(problems({ ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "yes" })).toEqual(["REQUIRE_SAME_GOOGLE_EMAIL must be true or false"]);
+  });
+
+  it.each(["http://127.0.0.1:3999", "http://localhost:3999/"])("accepts the fake on loopback: %s", (GOOGLE_FAKE_URL) => {
+    expect(parseConfig({ ...valid, GOOGLE_FAKE_URL }).google.fakeUrl).toBe(GOOGLE_FAKE_URL.replace(/\/$/, ""));
+  });
+
+  it.each(["https://fake.example.com", "http://10.0.0.5:3999", "http://127.0.0.1.example.com"])("refuses a fake that is not on loopback: %s", (GOOGLE_FAKE_URL) => {
+    expect(problems({ ...valid, GOOGLE_FAKE_URL })).toEqual(["GOOGLE_FAKE_URL is for tests only and must point at localhost or 127.0.0.1"]);
+  });
+
+  it("refuses a fake URL that is not http(s)", () => {
+    expect(problems({ ...valid, GOOGLE_FAKE_URL: "ftp://127.0.0.1" })).toEqual(["GOOGLE_FAKE_URL must be a http: or https: URL"]);
   });
 });
 

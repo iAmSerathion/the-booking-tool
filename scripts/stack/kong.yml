@@ -1,0 +1,19 @@
+# Gateway like Supabase's: /auth/v1 to GoTrue, /rest/v1 to PostgREST.
+# shortcut: no key-auth on the apikey header (Supabase checks it at the gateway); PostgREST and GoTrue still verify
+# the JWT in Authorization. Fine for a loopback-only test stack, never use this file for a real deployment.
+_format_version: "2.1"
+_transform: true
+
+services:
+  - name: auth-v1
+    url: http://auth:9999/
+    routes: [{ name: auth-v1, strip_path: true, paths: [/auth/v1/] }]
+    plugins: [{ name: cors }]
+  - name: rest-v1
+    url: http://rest:3000/
+    routes: [{ name: rest-v1, strip_path: true, paths: [/rest/v1/] }]
+    plugins:
+      - name: cors
+      # supabase-js sends the key as apikey; without an Authorization header PostgREST would treat the call as anon.
+      - name: request-transformer
+        config: { add: { headers: ["Authorization: Bearer $(headers.apikey)"] } }

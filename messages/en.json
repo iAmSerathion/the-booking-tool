@@ -1,4 +1,9 @@
 {
   "home.title": "{brand}",
-  "home.setup": "This booking tool is being set up."
+  "home.setup": "This booking tool is being set up.",
+  "login.title": "Sign in – {brand}",
+  "login.intro": "Sign in with your Google account.",
+  "login.google": "Sign in with Google",
+  "login.noAccess": "This Google account has no access. Ask an admin to invite you.",
+  "login.failed": "Sign-in did not work. Please try again."
 }

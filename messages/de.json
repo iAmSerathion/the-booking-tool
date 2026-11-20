@@ -1,4 +1,9 @@
 {
   "home.title": "{brand}",
-  "home.setup": "Dieses Buchungs-Tool wird gerade eingerichtet."
+  "home.setup": "Dieses Buchungs-Tool wird gerade eingerichtet.",
+  "login.title": "Anmelden – {brand}",
+  "login.intro": "Melde dich mit deinem Google-Konto an.",
+  "login.google": "Mit Google anmelden",
+  "login.noAccess": "Dieses Google-Konto hat keinen Zugang. Bitte lass dich von einem Admin einladen.",
+  "login.failed": "Die Anmeldung hat nicht geklappt. Bitte versuch es noch einmal."
 }
