@@ -25,8 +25,17 @@ npm run stack:down           # stop it and delete its data
 keys each time. The API listens on `127.0.0.1:54421`, Postgres on `127.0.0.1:54422`. Every port is bound to
 127.0.0.1 only; `supabase start` would publish on all interfaces. `supabase/config.toml` uses the same ports for CI.
 
-Seeded members: `admin.demo@example.com` (admin) and `host.demo@example.com` (bookable). Login is Google only, so
-locally only the e2e tests sign in, with generated magic-link sessions (`tests/e2e/session.ts`).
+Seeded members: `admin.demo@example.com` (admin) and `host.demo@example.com` (bookable). Login is Google only. The
+e2e tests sign in with generated magic-link sessions (`tests/e2e/session.ts`). By default the stack carries a fake Google
+client, so "Sign in with Google" in `npm run dev` fails at Google. To sign in by hand, create a Google OAuth web client
+with the redirect URI `http://127.0.0.1:54421/auth/v1/callback`, then start the stack with it:
+
+```bash
+GOOGLE_CLIENT_ID=<client id> GOOGLE_CLIENT_SECRET=<client secret> npm run stack:up
+```
+
+Put the same two values and the Supabase keys from `.env.e2e.local` into `.env.local`. Sign in with `INITIAL_ADMIN_EMAIL`
+or an invited address. The calendar connection also needs `<APP_URL>/api/google/callback` among the client's redirect URIs.
 
 ## Sign-in
 
