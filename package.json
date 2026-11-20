@@ -13,7 +13,9 @@
     "test:e2e": "playwright test",
     "db:test": "bash scripts/db-test.sh",
     "test:db": "vitest run --config vitest.db.config.ts",
-    "db:lint": "bash scripts/db-lint.sh"
+    "db:lint": "bash scripts/db-lint.sh",
+    "stack:up": "bash scripts/stack/up.sh",
+    "stack:down": "bash scripts/stack/down.sh"
   },
   "engines": {
     "node": ">=24"
