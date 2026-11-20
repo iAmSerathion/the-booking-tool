@@ -305,13 +305,14 @@ test("the booking pages hydrate without console errors, and the time zone list f
   }
 });
 
-test("unknown member pages and confirmation tokens show the 404 page", async ({ page }) => {
-  await page.goto(`/nobody-${randomUUID().slice(0, 8)}`);
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
-  await page.goto(`/confirmed/${"A".repeat(43)}`);
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
-  await page.goto("/confirmed/not-a-token");
-  await expect(page.getByText("This page could not be found.")).toBeVisible();
+test("unknown member pages and confirmation tokens show the translated 404 page in the brand frame", async ({ page }) => {
+  for (const path of [`/nobody-${randomUUID().slice(0, 8)}`, `/confirmed/${"A".repeat(43)}`, "/confirmed/not-a-token"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Page not found");
+    await expect(page.getByText("This page does not exist or the link is no longer valid.")).toBeVisible();
+    await expect(page.getByText("Acme Bookings", { exact: true })).toBeVisible();
+    await expect(page.getByText("This page could not be found.")).toHaveCount(0);
+  }
 });
 
 for (const width of [390, 1440]) {

@@ -18,6 +18,8 @@
   "booking.eventSummary": "{event}: {invitee} and {host}",
   "booking.eventDescription": "Booking details: {link}",
   "frame.privacy": "Privacy",
+  "notFound.title": "Page not found",
+  "notFound.body": "This page does not exist or the link is no longer valid.",
   "frame.imprint": "Imprint",
   "booking.minutes": "{minutes} minutes",
   "booking.meet": "Google Meet",
