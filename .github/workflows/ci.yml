@@ -11,7 +11,7 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,6 +22,37 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # GoTrue's Google provider needs a client to start; e2e never reaches real Google (see tests/e2e/google-fake.mjs).
+      GOOGLE_CLIENT_ID: fake-client
+      GOOGLE_CLIENT_SECRET: fake-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.0
+      # On a CI runner `supabase start` may publish on 0.0.0.0; locally use `npm run stack:up` (127.0.0.1 only).
+      - run: supabase start -x studio,imgproxy,vector,logflare,supavisor,edge-runtime,realtime,storage-api,mailpit,postgres-meta
+      # Same file `npm run stack:up` writes locally; Playwright fails without it instead of skipping logged-in tests.
+      - name: Write .env.e2e.local
+        run: |
+          eval "$(supabase status -o env)"
+          : "${API_URL:?}" "${ANON_KEY:?}" "${SERVICE_ROLE_KEY:?}" "${DB_URL:?}"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$ANON_KEY"
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY"
+            echo "DATABASE_URL=$DB_URL"
+          } > .env.e2e.local
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - if: failure()
@@ -52,7 +83,7 @@ jobs:
       - run: supabase db lint --fail-on error
       - run: npm run test:db
         env:
-          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54422/postgres
 
   secrets:
     runs-on: ubuntu-latest
