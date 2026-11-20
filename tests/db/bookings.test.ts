@@ -239,6 +239,19 @@ describe("create_booking", () => {
       );
     }));
 
+  it("refuses a host that was deactivated after the hold was taken", () =>
+    rollback(async (client) => {
+      const { host, eventType } = await team(client);
+      await actAs(client, "service_role");
+      const holdId = await hold(client, host, at(10), at(10, 30));
+      await client.query("reset role");
+      await client.query("update public.profiles set active = false where id = $1", [host]);
+      await actAs(client, "service_role");
+      expect((await sqlError(client, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30) })])).code).toBe(
+        "P0002",
+      );
+    }));
+
   it("refuses a second upcoming booking of the same event type when asked to check, case-insensitively", () =>
     rollback(async (client) => {
       const { host, admin, eventType } = await team(client);
@@ -304,7 +317,8 @@ describe("create_booking", () => {
       await client.query("update public.profiles set bookable = false where id = $1", [host]);
       await actAs(client, "service_role");
       const holdId = await hold(client, host, at(16), at(16, 30));
-      expect((await sqlError(client, createSql, [holdId, viaLink(at(16), at(16, 30), reusable)])).code).toBe("P0004");
+      // The host check under the host lock comes before the link check.
+      expect((await sqlError(client, createSql, [holdId, viaLink(at(16), at(16, 30), reusable)])).code).toBe("P0002");
     }));
 });
 
@@ -334,6 +348,48 @@ describe("reschedule_booking", () => {
       expect((await sqlError(client, rescheduleSql, [id, mismatched, at(14), at(14, 30), null])).code).toBe("P0002");
       expect((await sqlError(client, rescheduleSql, [id, holdId, at(10, 15), at(10, 45), null])).code).toBe("P0002");
     }));
+
+  // deactivate_profile takes the host lock and then row-locks the bookings; reschedule must use the same order.
+  it("waits for the host lock without holding the booking row, so it cannot deadlock with deactivate_profile", async () => {
+    const setup = await pool.connect();
+    const lock = await pool.connect();
+    const mover = await pool.connect();
+    let host = "";
+    try {
+      host = await addProfile(setup, "lock-order-host@example.com");
+      const eventType = await defaultEventType(setup);
+      const id = await book(setup, { host, eventType, starts: at(10), ends: at(10, 30) });
+      const holdId = await hold(setup, host, at(15), at(15, 30), { except: id });
+
+      await lock.query("begin");
+      await lock.query("select pg_advisory_xact_lock(hashtext($1))", [`booking:${host}`]);
+      const pid = await scalar<number>(mover, "select pg_backend_pid()");
+      const moving = mover.query(rescheduleSql, [id, holdId, at(15), at(15, 30), null]);
+      let waiting = false;
+      for (let i = 0; i < 50 && !waiting; i++) {
+        const { rows } = await setup.query("select wait_event from pg_stat_activity where pid = $1", [pid]);
+        waiting = rows[0]?.wait_event === "advisory";
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+
+      // The row is still free while reschedule waits; with the old order this failed with 55P03.
+      await setup.query("begin");
+      await setup.query("select id from public.bookings where id = $1 for update nowait", [id]);
+      await setup.query("rollback");
+
+      await lock.query("commit");
+      expect((await moving).rows[0].n).toBe(1);
+    } finally {
+      await lock.query("rollback").catch(() => {});
+      await setup.query("rollback").catch(() => {});
+      if (host) {
+        await setup.query("delete from public.bookings where host_id = $1", [host]);
+        await removeProfile(setup, host);
+      }
+      for (const c of [setup, lock, mover]) c.release();
+    }
+  });
 });
 
 describe("cancel_booking and calendar sync", () => {
@@ -498,12 +554,13 @@ describe("cancel_booking_as_host", () => {
   it("lets the host or an admin cancel, nobody else", () =>
     rollback(async (client) => {
       const { admin, host, member, eventType } = await team(client);
-      const retired = await addProfile(client, "retired@example.com", { active: false });
+      const retired = await addProfile(client, "retired@example.com");
       await actAs(client, "service_role");
       const first = await book(client, { host, eventType, starts: at(10), ends: at(10, 30) });
       const second = await book(client, { host, eventType, starts: at(12), ends: at(12, 30) });
       const retiredBooking = await book(client, { host: retired, eventType, starts: at(14), ends: at(14, 30) });
       await client.query("reset role");
+      await client.query("update public.profiles set active = false where id = $1", [retired]);
 
       const cancel = "select public.cancel_booking_as_host($1, $2)";
       for (const [user, bookingId] of [

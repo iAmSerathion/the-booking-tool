@@ -236,12 +236,16 @@ declare
   v_link uuid := (p_booking ->> 'link_id')::uuid;
   v_row public.bookings%rowtype;
 begin
-  -- Invitee first, then host (the same order as before with lead and host), so two bookings for the same invitee wait
-  -- for each other even with different hosts.
+  -- Invitee lock first, then host lock, so two bookings for the same invitee wait for each other even with different
+  -- hosts.
   if v_check then
     perform pg_advisory_xact_lock(hashtext('invitee:' || v_email));
   end if;
   perform pg_advisory_xact_lock(hashtext('booking:' || v_host::text));
+  -- deactivate_profile takes the same host lock, so a host deactivated after hold_slot cannot be booked.
+  if not exists (select 1 from public.profiles p where p.id = v_host and p.active and p.bookable) then
+    raise exception 'The host can no longer be booked.' using errcode = 'P0002';
+  end if;
   -- The hold must still exist under the host lock and match the booked time.
   delete from public.slot_holds
   where id = p_hold_id and host_id = v_host and starts_at = v_starts and ends_at = v_ends;
@@ -321,15 +325,23 @@ language plpgsql
 set search_path = ''
 as $$
 declare
+  v_host uuid;
   v_old public.bookings%rowtype;
   v_row public.bookings%rowtype;
 begin
+  -- Host lock before the row lock, the same order as deactivate_profile; otherwise the two deadlock.
+  select host_id into v_host from public.bookings where id = p_booking_id;
+  if not found then
+    raise exception 'The booking can no longer be changed.' using errcode = 'P0002';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('booking:' || v_host::text));
+
   select * into v_old from public.bookings where id = p_booking_id for update;
-  if not found or v_old.state <> 'booked' or v_old.starts_at <= now() then
+  -- A concurrent deactivation may have moved the booking to a successor while we waited.
+  if v_old.state <> 'booked' or v_old.starts_at <= now() or v_old.host_id <> v_host then
     raise exception 'The booking can no longer be changed.' using errcode = 'P0002';
   end if;
 
-  perform pg_advisory_xact_lock(hashtext('booking:' || v_old.host_id::text));
   delete from public.slot_holds
   where id = p_hold_id and host_id = v_old.host_id and starts_at = p_starts_at and ends_at = p_ends_at;
   if not found then
