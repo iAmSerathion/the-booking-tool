@@ -50,7 +50,7 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
   if (looksLikeBot({ honeypot: typeof form.honeypot === "string" ? form.honeypot : "", startedAt: Number(form.startedAt), now: Date.now() })) {
     return { ok: false, error: "booking.error.failed" };
   }
-  if (!(await withinLimit())) return { ok: false, error: "booking.error.tooMany" };
+  if (!(await withinLimit(form.email))) return { ok: false, error: "booking.error.tooMany" };
 
   const context = await loadContext(ref).catch((cause) => {
     console.error("booking: context", cause);
