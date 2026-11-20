@@ -36,6 +36,8 @@ describe("parseConfig", () => {
     expect(config.webhook).toBeNull();
     expect(config.google.hostedDomain).toBeNull();
     expect(config.initialAdminEmail).toBeNull();
+    expect(config.google.requireSameEmail).toBe(false);
+    expect(config.google.fakeUrl).toBeNull();
   });
 
   it("lists every missing required variable at once", () => {
@@ -89,6 +91,25 @@ describe("sign-in settings", () => {
 
   it("rejects an initial admin that is not an email address", () => {
     expect(problems({ ...valid, INITIAL_ADMIN_EMAIL: "admin" })).toEqual(["INITIAL_ADMIN_EMAIL must be an email address"]);
+  });
+});
+
+describe("Google calendar settings", () => {
+  it("reads REQUIRE_SAME_GOOGLE_EMAIL", () => {
+    expect(parseConfig({ ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "true" }).google.requireSameEmail).toBe(true);
+    expect(problems({ ...valid, REQUIRE_SAME_GOOGLE_EMAIL: "yes" })).toEqual(["REQUIRE_SAME_GOOGLE_EMAIL must be true or false"]);
+  });
+
+  it.each(["http://127.0.0.1:3999", "http://localhost:3999/"])("accepts the fake on loopback: %s", (GOOGLE_FAKE_URL) => {
+    expect(parseConfig({ ...valid, GOOGLE_FAKE_URL }).google.fakeUrl).toBe(GOOGLE_FAKE_URL.replace(/\/$/, ""));
+  });
+
+  it.each(["https://fake.example.com", "http://10.0.0.5:3999", "http://127.0.0.1.example.com"])("refuses a fake that is not on loopback: %s", (GOOGLE_FAKE_URL) => {
+    expect(problems({ ...valid, GOOGLE_FAKE_URL })).toEqual(["GOOGLE_FAKE_URL is for tests only and must point at localhost or 127.0.0.1"]);
+  });
+
+  it("refuses a fake URL that is not http(s)", () => {
+    expect(problems({ ...valid, GOOGLE_FAKE_URL: "ftp://127.0.0.1" })).toEqual(["GOOGLE_FAKE_URL must be a http: or https: URL"]);
   });
 });
 

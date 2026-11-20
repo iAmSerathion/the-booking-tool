@@ -28,6 +28,8 @@ export const optionalEnvKeys = [
   "ALLOWED_GOOGLE_DOMAINS",
   "GOOGLE_HOSTED_DOMAIN",
   "INITIAL_ADMIN_EMAIL",
+  "REQUIRE_SAME_GOOGLE_EMAIL",
+  "GOOGLE_FAKE_URL",
   "TRUST_PROXY_HEADERS",
   "BOOKING_ATTEMPTS_PER_MINUTE",
   "WEBHOOK_URL",
@@ -37,7 +39,15 @@ export const optionalEnvKeys = [
 export type Config = {
   appUrl: string;
   supabase: { url: string; anonKey: string; serviceRoleKey: string };
-  google: { clientId: string; clientSecret: string; allowedDomains: string[]; hostedDomain: string | null };
+  google: {
+    clientId: string;
+    clientSecret: string;
+    allowedDomains: string[];
+    hostedDomain: string | null;
+    requireSameEmail: boolean;
+    // Test only: base URL of tests/e2e/google-fake.mjs instead of Google. Always a loopback host.
+    fakeUrl: string | null;
+  };
   initialAdminEmail: string | null;
   schedulerSecret: string;
   mail: { smtpUrl: string; from: string };
@@ -126,6 +136,15 @@ export function parseConfig(env: Env): Config {
   const initialAdminEmail = get("INITIAL_ADMIN_EMAIL")?.toLowerCase() ?? null;
   if (initialAdminEmail && !/^[^@\s]+@[^@\s]+$/.test(initialAdminEmail)) problems.push("INITIAL_ADMIN_EMAIL must be an email address");
 
+  const requireSameEmail = get("REQUIRE_SAME_GOOGLE_EMAIL") ?? "false";
+  if (!["true", "false"].includes(requireSameEmail)) problems.push("REQUIRE_SAME_GOOGLE_EMAIL must be true or false");
+
+  // The fake hands out tokens to anyone, so it must never be reachable from outside this machine.
+  const fakeUrl = url("GOOGLE_FAKE_URL", ["http:", "https:"]);
+  if (fakeUrl && !["localhost", "127.0.0.1"].includes(new URL(fakeUrl).hostname)) {
+    problems.push("GOOGLE_FAKE_URL is for tests only and must point at localhost or 127.0.0.1");
+  }
+
   const webhookSecret = get("WEBHOOK_SECRET");
   if (get("WEBHOOK_URL") && !webhookSecret) problems.push("WEBHOOK_SECRET is required when WEBHOOK_URL is set");
   if (webhookSecret && webhookSecret.length < 32) problems.push("WEBHOOK_SECRET must be at least 32 characters");
@@ -143,6 +162,8 @@ export function parseConfig(env: Env): Config {
         .map((d) => d.trim().toLowerCase())
         .filter(Boolean),
       hostedDomain: get("GOOGLE_HOSTED_DOMAIN")?.toLowerCase() ?? null,
+      requireSameEmail: requireSameEmail === "true",
+      fakeUrl,
     },
     initialAdminEmail,
     schedulerSecret,
