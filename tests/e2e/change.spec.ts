@@ -147,6 +147,9 @@ test("an invitee cancels with a reason: Google event removed, outbox row, closed
         metadata: { rebook_of: booking.id },
       }),
     ]);
+    // The rebook link opens the host's page with the invitee filled in.
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Jordan Invitee");
+    await expect(page.getByLabel("Email", { exact: true })).toHaveValue(row!.invitee_email);
   } finally {
     await second.context().close();
     await removeHost(host.id);

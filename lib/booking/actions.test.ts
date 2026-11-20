@@ -234,6 +234,12 @@ describe("bookSlot", () => {
     expect(called("create_booking")[0][1]).toMatchObject({ p_hold_id: "hold-1", p_booking: { host_id: "h1", booked_via: "link", link_id: "link-1" } });
   });
 
+  it("answers a link that closed after the page loaded with linkInvalid, before any hold", async () => {
+    state.context = null;
+    expect(await bookSlot({ kind: "link", token: "a".repeat(43) }, form())).toEqual({ ok: false, error: "booking.error.linkInvalid" });
+    expect(names()).toEqual(["limit"]);
+  });
+
   it("answers a used or revoked link (P0004) with linkInvalid", async () => {
     state.context = { ...context, via: "link", hosts: [context.hosts[0]], linkId: "link-1" };
     state.createBooking = [{ code: "P0004", message: "The booking link is no longer valid." }];
