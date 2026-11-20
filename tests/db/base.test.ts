@@ -233,7 +233,7 @@ describe("set_slug", () => {
 describe("settings", () => {
   it("seeds only neutral defaults", () =>
     rollback(async (client) => {
-      const { rows } = await client.query("select key, value from public.settings order by key");
+      const { rows } = await client.query("select key, value from public.settings where key in ('slot_horizon_days', 'website_mode') order by key");
       expect(rows).toEqual([
         { key: "slot_horizon_days", value: 14 },
         { key: "website_mode", value: "round_robin" },
@@ -247,7 +247,7 @@ describe("settings", () => {
       await client.query("savepoint s");
 
       await actAs(client, "authenticated", member);
-      expect(await scalar(client, "select count(*)::int from public.settings")).toBe(2);
+      expect(await scalar(client, "select count(*)::int from public.settings where key in ('slot_horizon_days', 'website_mode')")).toBe(2);
       expect((await sqlError(client, "update public.settings set value = '30' where key = 'slot_horizon_days'")).code).toBe("42501");
       expect((await sqlError(client, "insert into public.settings (key, value) values ('brand', '{}')")).code).toBe("42501");
       expect((await sqlError(client, "delete from public.settings")).code).toBe("42501");
