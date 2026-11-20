@@ -1,4 +1,5 @@
-// Test-only stand-in for the Google endpoints the app calls: OAuth consent, token, revoke, calendar list and free/busy.
+// Test-only stand-in for the Google endpoints the app calls: OAuth consent, token, revoke, calendar list, free/busy and
+// events (insert with Meet, delete, list).
 // Playwright starts it (playwright.config.ts); the app uses it only when GOOGLE_FAKE_URL points at a loopback host.
 // It listens on 127.0.0.1 only. Never point a real instance at it.
 //
@@ -11,12 +12,14 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.GOOGLE_FAKE_PORT ?? 3999);
 
-let granted, invalid, otherAccount, busy, counter, deny, onlyScope, failExchange;
+let granted, invalid, otherAccount, busy, events, failInsert, counter, deny, onlyScope, failExchange;
 const reset = () => {
   granted = new Map(); // email -> granted scopes
   invalid = new Set(); // emails whose refresh tokens Google no longer accepts
   otherAccount = new Map(); // login_hint -> email the next consent signs in with instead
   busy = new Map(); // calendar id -> [{ start, end }] ISO instants
+  events = new Map(); // calendar id -> Map(event id -> { id, status, query, deleteQuery?, ...body })
+  failInsert = new Map(); // calendar id -> how many of the next event inserts fail with a 503
   deny = new Set(); // login_hints whose next consent is cancelled
   onlyScope = new Map(); // login_hint -> the only scope the next consent grants
   failExchange = new Set(); // emails whose next code exchange fails
@@ -50,6 +53,20 @@ const idToken = (email) => `${encode({ alg: "none" })}.${encode({ email, email_v
 
 const emailOf = (token, prefix) => (token?.startsWith(prefix) ? token.slice(prefix.length).split("|")[0] : null);
 const bearerEmail = (req) => emailOf(req.headers.authorization?.replace(/^Bearer /, ""), "fake-access-");
+
+const calendarEvents = (calendarId) => {
+  if (!events.has(calendarId)) events.set(calendarId, new Map());
+  return events.get(calendarId);
+};
+const liveEvents = (calendarId, from, to) =>
+  [...calendarEvents(calendarId).values()].filter(
+    (e) => e.status !== "cancelled" && Date.parse(e.start.dateTime) < to && Date.parse(e.end.dateTime) > from,
+  );
+// /calendar/v3/calendars/<id>/events[/<event id>], ids URL-encoded ("#" arrives as %23).
+const eventsPath = (pathname) => {
+  const match = pathname.match(/^\/calendar\/v3\/calendars\/([^/]+)\/events(?:\/([^/]+))?$/);
+  return match && { calendarId: decodeURIComponent(match[1]), eventId: match[2] && decodeURIComponent(match[2]) };
+};
 
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
@@ -129,13 +146,67 @@ createServer(async (req, res) => {
     const { timeMin, timeMax, items = [] } = JSON.parse(await read(req));
     const from = Date.parse(timeMin);
     const to = Date.parse(timeMax);
+    // Like Google: set busy blocks plus the calendar's own (opaque) events.
     const calendars = Object.fromEntries(
-      items.map(({ id }) => [id, { busy: (busy.get(id) ?? []).filter((b) => Date.parse(b.start) < to && Date.parse(b.end) > from) }]),
+      items.map(({ id }) => [
+        id,
+        {
+          busy: [
+            ...(busy.get(id) ?? []).filter((b) => Date.parse(b.start) < to && Date.parse(b.end) > from),
+            ...liveEvents(id, from, to).map((e) => ({ start: e.start.dateTime, end: e.end.dateTime })),
+          ],
+        },
+      ]),
     );
     return json(res, 200, { kind: "calendar#freeBusy", timeMin, timeMax, calendars });
   }
 
+  const path = eventsPath(url.pathname);
+  if (path) {
+    if (!bearerEmail(req)) return json(res, 401, { error: { status: "UNAUTHENTICATED" } });
+    const list = calendarEvents(path.calendarId);
+    const query = Object.fromEntries(url.searchParams);
+    if (!path.eventId && post) {
+      const left = failInsert.get(path.calendarId) ?? 0;
+      if (left > 0) {
+        failInsert.set(path.calendarId, left - 1);
+        return json(res, 503, { error: { status: "UNAVAILABLE" } });
+      }
+      const body = JSON.parse(await read(req));
+      const id = `fake-event-${++counter}`;
+      const event = { ...body, id, status: "confirmed", query };
+      // Google adds a conference only with conferenceDataVersion=1; without it the create request is ignored.
+      if (body.conferenceData?.createRequest && query.conferenceDataVersion === "1") {
+        const uri = `https://meet.google.com/fake-${counter}`;
+        event.hangoutLink = uri;
+        event.conferenceData = { ...body.conferenceData, entryPoints: [{ entryPointType: "video", uri }] };
+      } else delete event.conferenceData;
+      list.set(id, event);
+      return json(res, 200, event);
+    }
+    if (!path.eventId && req.method === "GET") {
+      const from = Date.parse(query.timeMin ?? "1970-01-01T00:00:00Z");
+      const to = Date.parse(query.timeMax ?? "9999-01-01T00:00:00Z");
+      return json(res, 200, { items: liveEvents(path.calendarId, from, to) });
+    }
+    if (path.eventId && req.method === "DELETE") {
+      const event = list.get(path.eventId);
+      if (!event || event.status === "cancelled") return json(res, 410, { error: { status: "GONE" } });
+      // Deleted events stay as cancelled (as Google lists them with showDeleted), so tests can check the delete.
+      list.set(path.eventId, { ...event, status: "cancelled", deleteQuery: query });
+      res.writeHead(204);
+      return res.end();
+    }
+    return json(res, 405, { error: { status: "METHOD_NOT_ALLOWED" } });
+  }
+
   // Test controls.
+  // Every event of one calendar, deleted ones included (status "cancelled").
+  if (url.pathname === "/control/events") return json(res, 200, { items: [...calendarEvents(url.searchParams.get("calendar")).values()] });
+  if (url.pathname === "/control/fail-insert" && post) {
+    failInsert.set(url.searchParams.get("calendar"), Number(url.searchParams.get("count") ?? 1));
+    return json(res, 200, {});
+  }
   if (url.pathname === "/control/busy" && post) {
     busy.set(url.searchParams.get("calendar"), JSON.parse((await read(req)) || "[]"));
     return json(res, 200, {});
