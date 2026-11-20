@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useRef, useState, useTransition } from "reac
 import type { BookingForm, BookingResult } from "@/lib/booking/actions";
 import type { PublicSlot } from "@/lib/booking/data";
 import type { Locale } from "@/lib/config";
+import type { Prefill } from "@/lib/core/links";
 import { cleanBookingInput, slotChip, validateBooking } from "@/lib/core/booking";
 import { type Question, validateAnswers } from "@/lib/core/questions";
 import { type MessageKey, t } from "@/lib/i18n";
@@ -24,18 +25,27 @@ type Props = {
   hostName: string | null;
   meet: boolean;
   slots: PublicSlot[];
+  // Booking links: initial values the invitee can still change.
+  prefill?: Prefill;
 };
 
 type Answers = Record<string, string | string[]>;
 const fieldNames = ["name", "email", "company", "phone", "topic"] as const;
 
-export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, eventType, hostName, meet, slots: initialSlots }: Props) {
-  const [timeZone, setTimeZone] = useInviteeZone(defaultTimeZone);
+export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, eventType, hostName, meet, slots: initialSlots, prefill = {} }: Props) {
+  const [timeZone, setTimeZone] = useInviteeZone(defaultTimeZone, prefill.timeZone);
 
   const [slots, setSlots] = useState(initialSlots);
   const [start, setStart] = useState<string | null>(null);
-  const [fields, setFields] = useState({ name: "", email: "", company: "", phone: "", topic: "", privacy: false });
-  const [answers, setAnswers] = useState<Answers>({});
+  const [fields, setFields] = useState({
+    name: prefill.name ?? "",
+    email: prefill.email ?? "",
+    company: prefill.company ?? "",
+    phone: prefill.phone ?? "",
+    topic: "",
+    privacy: false,
+  });
+  const [answers, setAnswers] = useState<Answers>(prefill.answers ?? {});
   const [errors, setErrors] = useState<Record<string, MessageKey>>({});
   const [formError, setFormError] = useState<MessageKey | null>(null);
   const [pending, startTransition] = useTransition();

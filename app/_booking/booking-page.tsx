@@ -4,12 +4,14 @@ import { type ChannelRef, loadBookingPage } from "@/lib/booking/data";
 import { getConfig } from "@/lib/config";
 import { Booking } from "./booking";
 import { Frame } from "./frame";
+import { LinkClosed } from "./link-closed";
 
-// A public booking page: "/" (website default) or "/<slug>" (one member). The caller has awaited connection().
+// A public booking page: "/" (website default), "/<slug>" (one member) or "/l/<token>" (a booking link). The caller has
+// awaited connection(). A link that cannot be used gets the neutral closed view, never a hint why.
 // Only titles, names and free start/end times go to the browser; host ids stay here and the action derives them again.
 export async function BookingPage({ channel }: { channel: ChannelRef }) {
   const page = await loadBookingPage(channel);
-  if (!page) notFound();
+  if (!page) return channel.kind === "link" ? <LinkClosed /> : notFound();
   const { context, slots } = page;
   const config = getConfig();
   const { title, description, durationMinutes, questions } = context.eventType;
@@ -26,6 +28,7 @@ export async function BookingPage({ channel }: { channel: ChannelRef }) {
         hostName={context.hosts.length === 1 ? context.hosts[0].name : null}
         meet={context.hosts.length > 0 && context.hosts.every((h) => h.meetAuto)}
         slots={slots}
+        prefill={context.prefill}
       />
     </Frame>
   );

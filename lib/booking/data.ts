@@ -1,5 +1,6 @@
 import { loadAvailability, loadOffer } from "@/lib/availability/data";
 import { freeSlots, withoutBooking } from "@/lib/core/availability";
+import { linkPrefill, linkStatus, type Prefill } from "@/lib/core/links";
 import type { Question } from "@/lib/core/questions";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { hashToken, plausibleToken } from "./token";
@@ -8,12 +9,15 @@ import { hashToken, plausibleToken } from "./token";
 // and the confirmation behind a token. Service role, server code only; never send host ids to the browser.
 
 // Where a booking comes from: the general page "/" (website default) or a member's page "/<slug>". eventType: an
-// active event type's slug instead of the default one. M5 adds booking links ({kind: "link", token}), M6 widgets.
-export type ChannelRef = { kind: "page"; eventType?: string } | { kind: "person"; slug: string; eventType?: string };
+// active event type's slug instead of the default one. A booking link "/l/<token>" fixes host and event type. M6 adds
+// widgets.
+export type ChannelRef = { kind: "page"; eventType?: string } | { kind: "person"; slug: string; eventType?: string } | { kind: "link"; token: string };
 
 export type BookingHost = { id: string; name: string; meetAuto: boolean };
 export type BookingEventType = { id: string; slug: string; title: string; description: string | null; durationMinutes: number; questions: Question[] };
-export type BookingContext = { via: "page" | "person_link"; hosts: BookingHost[]; eventType: BookingEventType };
+// Links only: linkId (server side, passed to create_booking) and the cleaned prefill. The link's metadata never leaves
+// the database.
+export type BookingContext = { via: "page" | "person_link" | "link"; hosts: BookingHost[]; eventType: BookingEventType; linkId?: string; prefill?: Prefill };
 // What the browser gets per free time.
 export type PublicSlot = { start: string; end: string };
 
@@ -24,6 +28,7 @@ const settingString = (value: unknown) => (typeof value === "string" ? value : n
 // Null when the page does not exist: unknown or unbookable slug, unknown or inactive event type, or no default event
 // type. The general page with nobody bookable still exists; it just has no hosts and so no free times.
 export async function loadContext(ref: ChannelRef): Promise<BookingContext | null> {
+  if (ref.kind === "link") return loadLinkContext(ref.token);
   if (ref.kind === "person" && !slugPattern.test(ref.slug)) return null;
   if (ref.eventType !== undefined && !slugPattern.test(ref.eventType)) return null;
   const db = createAdminSupabase();
@@ -32,7 +37,7 @@ export async function loadContext(ref: ChannelRef): Promise<BookingContext | nul
   if (error) throw error;
   const settings = new Map((rows ?? []).map((row) => [row.key as string, row.value as unknown]));
 
-  const types = db.from("event_types").select("id, slug, title, description, duration_minutes, questions").eq("active", true);
+  const types = db.from("event_types").select(eventTypeColumns).eq("active", true);
   const defaultId = settingString(settings.get("default_event_type_id"));
   if (ref.eventType === undefined && !uuidPattern.test(defaultId ?? "")) return null;
   const hosts = db.from("profiles").select("id, name, meet_auto").eq("active", true).eq("bookable", true).order("name").order("id");
@@ -51,11 +56,45 @@ export async function loadContext(ref: ChannelRef): Promise<BookingContext | nul
   const chosen = settingString(settings.get("website_person_id"));
   if (ref.kind === "page" && settings.get("website_mode") === "person" && list.some((h) => h.id === chosen)) list = list.filter((h) => h.id === chosen);
 
-  const t = type.data;
+  return { via: ref.kind === "page" ? "page" : "person_link", hosts: list, eventType: toEventType(type.data) };
+}
+
+const eventTypeColumns = "id, slug, title, description, duration_minutes, questions";
+const toEventType = (t: { id: string; slug: string; title: string; description: string | null; duration_minutes: number; questions: Question[] | null }): BookingEventType => ({
+  id: t.id,
+  slug: t.slug,
+  title: t.title,
+  description: t.description,
+  durationMinutes: t.duration_minutes,
+  questions: t.questions ?? [],
+});
+
+// A booking link: null for unknown, used (single use), expired or revoked links, and when its host can no longer be
+// booked or its event type is switched off. The page shows the same closed view for all of them.
+async function loadLinkContext(token: string): Promise<BookingContext | null> {
+  if (!plausibleToken(token)) return null;
+  const db = createAdminSupabase();
+  const { data: link, error } = await db
+    .from("booking_links")
+    .select("id, host_id, event_type_id, prefill, single_use, used_at, expires_at, revoked_at")
+    .eq("token_hash", hashToken(token))
+    .maybeSingle();
+  if (error) throw error;
+  if (!link || linkStatus(link, new Date()) !== "active") return null;
+  const [type, host] = await Promise.all([
+    db.from("event_types").select(eventTypeColumns).eq("id", link.event_type_id).eq("active", true).maybeSingle(),
+    db.from("profiles").select("id, name, meet_auto").eq("id", link.host_id).eq("active", true).eq("bookable", true).maybeSingle(),
+  ]);
+  if (type.error) throw type.error;
+  if (host.error) throw host.error;
+  if (!type.data || !host.data) return null;
+  const eventType = toEventType(type.data);
   return {
-    via: ref.kind === "page" ? "page" : "person_link",
-    hosts: list,
-    eventType: { id: t.id, slug: t.slug, title: t.title, description: t.description, durationMinutes: t.duration_minutes, questions: t.questions ?? [] },
+    via: "link",
+    hosts: [{ id: host.data.id, name: host.data.name, meetAuto: host.data.meet_auto }],
+    eventType,
+    linkId: link.id,
+    prefill: linkPrefill(link.prefill, eventType.questions),
   };
 }
 
