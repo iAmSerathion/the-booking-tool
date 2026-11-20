@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
+import { readBrandName, readLocale } from "@/lib/config";
 
-export const metadata: Metadata = {
-  title: "the-booking-tool",
-  robots: { index: false, follow: false },
-};
+export function generateMetadata(): Metadata {
+  return { title: readBrandName(), robots: { index: false, follow: false } };
+}
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en">
+    <html lang={readLocale()}>
       <body>{children}</body>
     </html>
   );
