@@ -31,6 +31,8 @@ export async function admitUser(admin: SupabaseClient, user: User, rules: AdmitR
       // The database re-checks "no active admin yet" under a lock; a concurrent first admin makes this fail.
       const { error } = await admin.rpc("admit_profile", { p_id: user.id, p_as_admin: access === "create-admin" });
       if (!error) return "in";
+      // 42501 = a first admin exists already, 23505 = the profile exists. Anything else is a failure, not a refusal.
+      if (error.code !== "42501" && error.code !== "23505") throw error;
     }
   }
   return profile.data ? "out" : "stranger";
