@@ -31,6 +31,9 @@ npm run lint
 npm run typecheck
 npm test            # unit tests (Vitest)
 npm run test:e2e    # end-to-end tests (Playwright, builds the app first)
+npm run db:test     # fresh local test database on 127.0.0.1:55432 (Docker), migrations and seed
+npm run test:db     # database tests against it
+npm run db:lint     # plpgsql_check on the local test database (CI: supabase db lint)
 ```
 
 ## License
