@@ -16,7 +16,7 @@ describe("messages", () => {
 
 describe("t", () => {
   it("fills placeholders and keeps unknown ones", () => {
-    expect(t("en", "home.title", { brand: "Acme" })).toBe("Acme");
-    expect(t("de", "home.title")).toBe("{brand}");
+    expect(t("en", "booking.with", { name: "Alex" })).toBe("with Alex");
+    expect(t("de", "booking.with")).toBe("mit {name}");
   });
 });

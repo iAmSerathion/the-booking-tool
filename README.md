@@ -49,6 +49,28 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `ALLOWED_GOOGLE_DOMAINS` empty, sign-in is invite-only and any Google account (Gmail included) works.
 - Deactivated members and everyone else are signed out with a notice.
 
+## Booking pages
+
+- `/` is the general booking page. Settings decide who gets the booking: one member (`website_mode` "person" with
+  `website_person_id`) or round robin over all bookable members, where the free member whose last booking from this
+  page is oldest wins.
+- `/<slug>` is a member's own page. Unknown or not bookable members get the 404 page.
+- Both offer the default event type (`settings.default_event_type_id`). Times come from the member's availability
+  windows, buffer, minimum notice, daily maximum and the slot horizon, minus Google busy times. Only members with a
+  working calendar connection offer times. Slots start every 30 minutes, whatever the duration.
+- Booking checks everything again on the server, holds the time, creates the Google event (with Meet when the member
+  has it switched on) and saves the booking; if a step fails, nothing stays behind. The invitee lands on
+  `/confirmed/<token>`; only the token's hash is stored.
+- Brand, privacy and imprint links come from `BRAND_NAME`, `BRAND_LOGO_URL`, `PRIVACY_URL` and `IMPRINT_URL`. With a
+  privacy URL set, invitees must confirm they read it.
+- Booking attempts are rate limited per client address (`BOOKING_ATTEMPTS_PER_MINUTE`), which is only known behind a
+  proxy with `TRUST_PROXY_HEADERS=true`. Without it the limit is per invitee email, plus a global ceiling of 20 times
+  that number. A flood of many different emails can still reach the ceiling and pause booking for everyone until it
+  stops, so set `TRUST_PROXY_HEADERS=true` in production behind a proxy that appends the client address.
+- If the invitee already has an upcoming booking of the event type, the page gives the same answer as for any other
+  failure (its text points to the invitation in their email), so nobody can find out from outside whether an email has
+  a booking.
+
 ## Checks
 
 ```bash
@@ -63,7 +85,8 @@ npm run db:lint     # plpgsql_check on the local test database (CI: supabase db 
 
 The e2e tests start two servers: the production build on `127.0.0.1:3100` and a Google fake on `127.0.0.1:3999`
 (`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host). The
-fake covers the calendar connection (consent, tokens, calendar list, free/busy). It cannot stand in for the Supabase
+fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
+delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
 of skipping logged-in tests. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
 
