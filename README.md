@@ -71,6 +71,19 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   failure (its text points to the invitation in their email), so nobody can find out from outside whether an email has
   a booking.
 
+## Changes, booking links and the admin
+
+- The confirmation page links to `/reschedule/<token>` and `/cancel/<token>`. Invitees can move a booking to another free
+  time of the same host and event type, or cancel it with an optional reason, until it starts. The Google event is
+  moved or removed with updates to the guest; a failed move changes nothing. A cancelled booking offers "Book a new
+  time" (`/cancel/<token>/new`), a fresh single-use booking link to the same host with the invitee's details filled in.
+- Booking links (`/l/<token>`) fix the host and event type and can carry prefill (name, email, company, answers),
+  metadata (stored with the booking and sent in the outbox payload), single use and an expiry. Members create and
+  revoke their own links under Links in the admin, admins any member's. The link is shown once; only its hash is stored.
+  Unknown, used, expired and revoked links all show the same closed page.
+- Bookings in the admin lists upcoming bookings (members their own, admins all) with the invitee's answers and the link
+  metadata, in the viewer's time zone. Cancelling there removes the Google event with an update to the guest.
+
 ## Checks
 
 ```bash
@@ -86,7 +99,7 @@ npm run db:lint     # plpgsql_check on the local test database (CI: supabase db 
 The e2e tests start two servers: the production build on `127.0.0.1:3100` and a Google fake on `127.0.0.1:3999`
 (`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host). The
 fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
-delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
+move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
 of skipping logged-in tests. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
 
