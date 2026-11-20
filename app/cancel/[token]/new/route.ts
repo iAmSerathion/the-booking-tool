@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { loadConfirmation } from "@/lib/booking/data";
 import { withinLimit } from "@/lib/booking/limit";
@@ -12,8 +12,10 @@ export async function GET(_request: Request, { params }: RouteContext<"/cancel/[
   await connection();
   const { token } = await params;
   const booking = await loadConfirmation(token);
-  if (!booking) notFound();
-  const back = `/confirmed/${token}`;
+  // An unknown token ends on the confirmation page's 404 like any other wrong link (notFound() in a route handler has no
+  // page). Encoded, so the token stays one path segment.
+  const back = `/confirmed/${encodeURIComponent(token)}`;
+  if (!booking) redirect(back);
   if (booking.state !== "cancelled" || !(await withinLimit(booking.inviteeEmail))) redirect(back);
 
   const link = newToken();
