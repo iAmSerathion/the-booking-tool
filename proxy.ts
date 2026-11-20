@@ -15,6 +15,7 @@ export async function proxy(request: NextRequest) {
 
   let response = NextResponse.next({ request });
   const supabase = createServerClient(config.supabase.url, config.supabase.anonKey, {
+    cookieOptions: { secure: config.appUrl.startsWith("https:") },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll(list, headers) {
