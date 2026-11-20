@@ -10,7 +10,7 @@ export const currentProfile = cache(async () => {
   const { data } = await supabase.auth.getClaims();
   const userId = data?.claims?.sub;
   if (!userId) redirect("/login");
-  const { data: profile, error } = await supabase.from("profiles").select("id, name, email, is_admin").eq("id", userId).maybeSingle();
+  const { data: profile, error } = await supabase.from("profiles").select("id, name, email, is_admin, timezone").eq("id", userId).maybeSingle();
   if (error) throw error;
   if (!profile) redirect("/login?error=no-access");
   return profile;

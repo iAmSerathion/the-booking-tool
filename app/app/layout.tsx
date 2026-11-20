@@ -12,6 +12,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       <header className={styles.bar}>
         <strong>{readBrandName()}</strong>
         <nav aria-label="Main">
+          <Link href="/app/links">Links</Link>
           <Link href="/app/settings">Settings</Link>
         </nav>
         <span className={styles.me}>
