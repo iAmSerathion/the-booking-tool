@@ -1,14 +1,8 @@
 import { connection } from "next/server";
-import { readBrandName, readLocale } from "@/lib/config";
-import { t } from "@/lib/i18n";
+import { BookingPage } from "./_booking/booking-page";
 
+// The website default: the member chosen in settings (website_mode "person") or round robin over all bookable members.
 export default async function Home() {
   await connection();
-  const locale = readLocale();
-  return (
-    <main>
-      <h1>{t(locale, "home.title", { brand: readBrandName() })}</h1>
-      <p>{t(locale, "home.setup")}</p>
-    </main>
-  );
+  return <BookingPage channel={{ kind: "page" }} />;
 }
