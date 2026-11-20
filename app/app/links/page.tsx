@@ -33,7 +33,7 @@ export default async function LinksPage() {
           {links.map((link) => {
             const status = linkStatus(link, now);
             const label = [text(link.prefill.name) || text(link.prefill.email) || "Link", link.eventType, date(link.created_at, me.timezone)].join(", ");
-            const meta = Object.entries(link.metadata);
+            const meta = Object.entries(link.metadata).sort(([a], [b]) => a.localeCompare(b));
             return (
               <li key={link.id} className={styles.card} aria-label={label}>
                 <dl className={styles.pairs}>

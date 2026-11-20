@@ -56,8 +56,9 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     console.error("booking: context", cause);
     return null;
   });
-  // Gone meanwhile (event type switched off, member no longer bookable) or the database failed.
-  if (!context) return { ok: false, error: "booking.error.failed" };
+  // Gone meanwhile (event type switched off, member no longer bookable, link used up, expired or revoked) or the database
+  // failed.
+  if (!context) return { ok: false, error: ref.kind === "link" ? "booking.error.linkInvalid" : "booking.error.failed" };
   if (context.hosts.length === 0) return { ok: false, error: "booking.error.taken", slots: [] };
 
   const input = cleanBookingInput(form);
