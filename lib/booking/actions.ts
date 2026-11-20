@@ -9,7 +9,7 @@ import { cleanBookingInput, eventSummary, looksLikeBot, roundRobinOrder, validat
 import { addDays, dayStart, safeTimeZone, zonedDay } from "@/lib/core/dates";
 import { validateAnswers } from "@/lib/core/questions";
 import { createAdminSupabase } from "@/lib/db/admin";
-import { createEvent, deleteEvent } from "@/lib/google/calendar";
+import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
 import { type MessageKey, t } from "@/lib/i18n";
 import { type ChannelRef, lastRoundRobinBookings, loadContext, type PublicSlot, publicSlots } from "./data";
@@ -72,7 +72,17 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
   const inviteeTimeZone = safeTimeZone(form.timeZone, config.timeZone);
   const db = createAdminSupabase();
 
-  // Cheap duplicate check before Google sends an invitation; create_booking checks again under a lock (P0003).
+  // Fresh free times, without the busy cache: the chosen start must still be free for at least one host.
+  const hostIds = context.hosts.map((h) => h.id);
+  const offer = await loadOffer(hostIds, context.eventType.durationMinutes, { fresh: true });
+  // The chosen start is left out: it was not free, or someone else just got it.
+  const taken = (): BookingResult => ({ ok: false, error: "booking.error.taken", slots: publicSlots(offer.slots.filter((s) => s.start !== start.toISOString())) });
+  const free = offer.slots.find((s) => s.start === start.toISOString())?.hostIds ?? [];
+  if (free.length === 0) return taken();
+
+  // Cheap duplicate check before Google sends an invitation; create_booking checks again under a lock (P0003). A duplicate
+  // gets the same answer as any other failure, whose text mentions the invitation: the page must not tell an anonymous
+  // caller whether an email has an upcoming booking.
   const upcoming = await db
     .from("bookings")
     .select("id")
@@ -82,15 +92,7 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     .gt("starts_at", new Date().toISOString())
     .limit(1);
   if (upcoming.error) return { ok: false, error: "booking.error.failed" };
-  if (upcoming.data.length) return { ok: false, error: "booking.error.already" };
-
-  // Fresh free times, without the busy cache: the chosen start must still be free for at least one host.
-  const hostIds = context.hosts.map((h) => h.id);
-  const offer = await loadOffer(hostIds, context.eventType.durationMinutes, { fresh: true });
-  // The chosen start is left out: it was not free, or someone else just got it.
-  const taken = (): BookingResult => ({ ok: false, error: "booking.error.taken", slots: publicSlots(offer.slots.filter((s) => s.start !== start.toISOString())) });
-  const free = offer.slots.find((s) => s.start === start.toISOString())?.hostIds ?? [];
-  if (free.length === 0) return taken();
+  if (upcoming.data.length) return { ok: false, error: "booking.error.failed" };
 
   // Round robin among the hosts free at that time; the rest of the order is the fallback if a host's hold fails.
   let order = free;
@@ -145,9 +147,10 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
         meet: host.meetAuto,
       });
     } catch (cause) {
-      // A timeout after Google created the event leaves an event the database does not know; the calendar sync (M8)
-      // skips those, and the Meet requestId keeps a retry from creating a second conference.
+      // The response may be lost after Google created the event (and sent the invitation). The id is ours, so take it
+      // back without a cancellation mail; a 404/410 means there was nothing.
       console.error("booking: event insert", cause);
+      await deleteEvent(access.token, availability.primaryCalendarId, googleEventId(bookingId), "none").catch((e) => console.error("booking: cleanup delete", e));
       await release();
       return { ok: false, error: "booking.error.failed" };
     }
@@ -178,7 +181,7 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
       // Nothing was saved: take the event back without a cancellation mail, then free the time.
       await deleteEvent(access.token, availability.primaryCalendarId, event.id, "none").catch((cause) => console.error("booking: rollback delete", cause));
       await release();
-      if (error.code === "P0003") return { ok: false, error: "booking.error.already" };
+      if (error.code === "P0003") return { ok: false, error: "booking.error.failed" };
       if (error.code === "P0004") return { ok: false, error: "booking.error.linkInvalid" };
       if (error.code === "P0002") return taken();
       console.error("booking: create_booking", error);

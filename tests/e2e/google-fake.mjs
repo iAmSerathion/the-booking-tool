@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.GOOGLE_FAKE_PORT ?? 3999);
 
-let granted, invalid, otherAccount, busy, events, failInsert, counter, deny, onlyScope, failExchange;
+let granted, invalid, otherAccount, busy, events, failInsert, loseInsert, counter, deny, onlyScope, failExchange;
 const reset = () => {
   granted = new Map(); // email -> granted scopes
   invalid = new Set(); // emails whose refresh tokens Google no longer accepts
@@ -20,6 +20,7 @@ const reset = () => {
   busy = new Map(); // calendar id -> [{ start, end }] ISO instants
   events = new Map(); // calendar id -> Map(event id -> { id, status, query, deleteQuery?, ...body })
   failInsert = new Map(); // calendar id -> how many of the next event inserts fail with a 503
+  loseInsert = new Map(); // calendar id -> how many of the next event inserts are created but answered with a 503
   deny = new Set(); // login_hints whose next consent is cancelled
   onlyScope = new Map(); // login_hint -> the only scope the next consent grants
   failExchange = new Set(); // emails whose next code exchange fails
@@ -173,15 +174,22 @@ createServer(async (req, res) => {
         return json(res, 503, { error: { status: "UNAVAILABLE" } });
       }
       const body = JSON.parse(await read(req));
-      const id = `fake-event-${++counter}`;
+      // Like Google: a client-chosen id is kept, and one that exists already (cancelled ones too) is a conflict.
+      if (body.id && list.has(body.id)) return json(res, 409, { error: { status: "ALREADY_EXISTS" } });
+      const id = body.id ?? `fake-event-${++counter}`;
       const event = { ...body, id, status: "confirmed", query };
       // Google adds a conference only with conferenceDataVersion=1; without it the create request is ignored.
       if (body.conferenceData?.createRequest && query.conferenceDataVersion === "1") {
-        const uri = `https://meet.google.com/fake-${counter}`;
+        const uri = `https://meet.google.com/fake-${id}`;
         event.hangoutLink = uri;
         event.conferenceData = { ...body.conferenceData, entryPoints: [{ entryPointType: "video", uri }] };
       } else delete event.conferenceData;
       list.set(id, event);
+      const lost = loseInsert.get(path.calendarId) ?? 0;
+      if (lost > 0) {
+        loseInsert.set(path.calendarId, lost - 1);
+        return json(res, 503, { error: { status: "UNAVAILABLE" } });
+      }
       return json(res, 200, event);
     }
     if (!path.eventId && req.method === "GET") {
@@ -205,6 +213,11 @@ createServer(async (req, res) => {
   if (url.pathname === "/control/events") return json(res, 200, { items: [...calendarEvents(url.searchParams.get("calendar")).values()] });
   if (url.pathname === "/control/fail-insert" && post) {
     failInsert.set(url.searchParams.get("calendar"), Number(url.searchParams.get("count") ?? 1));
+    return json(res, 200, {});
+  }
+  // The next inserts are created at Google, but the response is lost (a 503 after the commit).
+  if (url.pathname === "/control/lose-insert" && post) {
+    loseInsert.set(url.searchParams.get("calendar"), Number(url.searchParams.get("count") ?? 1));
     return json(res, 200, {});
   }
   if (url.pathname === "/control/busy" && post) {
