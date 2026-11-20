@@ -1,7 +1,9 @@
+import { connection } from "next/server";
 import { readBrandName, readLocale } from "@/lib/config";
 import { t } from "@/lib/i18n";
 
-export default function Home() {
+export default async function Home() {
+  await connection();
   const locale = readLocale();
   return (
     <main>
