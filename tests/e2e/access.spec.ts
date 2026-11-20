@@ -15,7 +15,7 @@ async function googleUser(email: string, hd?: string, verified = true): Promise<
   const { data, error } = await admin().auth.admin.createUser({ email, email_confirm: true, user_metadata: { full_name: "New Person" } });
   if (error) throw error;
   created.push(data.user.id);
-  return { ...data.user, identities: [{ provider: "google", identity_data: { email_verified: verified, ...(hd ? { custom_claims: { hd } } : {}) } }] } as User;
+  return { ...data.user, identities: [{ provider: "google", identity_data: { email_verified: verified, ...(hd ? { custom_claims: { hd } } : {}) } }] } as unknown as User;
 }
 
 async function existingUser(email: string): Promise<User> {
