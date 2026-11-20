@@ -171,6 +171,7 @@ describe("set_person_rights", () => {
   it("refuses an unknown member and removing the last admin", () =>
     rollback(async (client) => {
       const { admin } = await team(client);
+      await client.query("update public.profiles set is_admin = false where id <> $1", [admin]); // the seed has an admin
       await as(client, "authenticated", admin, async () => {
         expect((await sqlError(client, rightsSql, ["00000000-0000-0000-0000-000000000001", "{}"])).code).toBe("P0002");
         const last = await sqlError(client, rightsSql, [admin, '{"is_admin": false}']);
@@ -334,6 +335,8 @@ describe("last admin under concurrency", () => {
     const a = await pool.connect();
     const b = await pool.connect();
     const ids: string[] = [];
+    // The race needs these two to be the only admins; seeded admins are demoted for the test and restored after.
+    const { rows: others } = await setup.query<{ id: string }>("update public.profiles set is_admin = false where is_admin returning id");
     try {
       expect(await scalar(setup, "select count(*)::int from public.profiles where active and is_admin")).toBe(0);
       ids.push(await addProfile(setup, "race-a@example.com", { isAdmin: true }));
@@ -365,6 +368,7 @@ describe("last admin under concurrency", () => {
       await a.query("rollback").catch(() => {});
       await b.query("rollback").catch(() => {});
       for (const id of ids) await removeProfile(setup, id);
+      await setup.query("update public.profiles set is_admin = true where id = any($1)", [others.map((row) => row.id)]);
       for (const c of [setup, a, b]) c.release();
     }
   }

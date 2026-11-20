@@ -217,7 +217,7 @@ describe("availability windows", () => {
       const otherWindow = await scalar<string>(client, "select id from public.availability_windows where user_id = $1 limit 1", [other]);
 
       await actAs(client, "authenticated", me);
-      expect(await scalar(client, "select count(*)::int from public.availability_windows")).toBe(20);
+      expect(await scalar(client, "select count(*)::int from public.availability_windows where user_id = any($1)", [[me, other]])).toBe(20);
       await client.query("insert into public.availability_windows (user_id, weekday, start_time, end_time) values ($1, 6, '10:00', '11:00')", [me]);
       expect((await sqlError(client, "insert into public.availability_windows (user_id, weekday, start_time, end_time) values ($1, 6, '10:00', '11:00')", [other])).code).toBe("42501");
       await client.query("delete from public.availability_windows where id = $1", [otherWindow]);

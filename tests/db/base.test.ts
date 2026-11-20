@@ -94,7 +94,7 @@ describe("profiles RLS", () => {
 
       await client.query("savepoint s");
       await actAs(client, "authenticated", member);
-      expect(await scalar(client, "select count(*)::int from public.profiles")).toBe(2);
+      expect(await scalar(client, "select count(*)::int from public.profiles where id = any($1)", [[member, gone]])).toBe(2);
       await client.query("rollback to savepoint s");
 
       await actAs(client, "authenticated", gone);

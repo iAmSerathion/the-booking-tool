@@ -179,7 +179,7 @@ describe("event types", () => {
 
       await client.query("reset role");
       await actAs(client, "authenticated", member);
-      expect(await scalar(client, "select count(*)::int from public.event_types")).toBe(2);
+      expect(await scalar(client, "select count(*)::int from public.event_types where id = any($1)", [[id, await defaultEventType(client)]])).toBe(2);
       expect((await sqlError(client, "update public.event_types set title = 'x'")).code).toBe("42501");
       expect((await sqlError(client, "insert into public.event_types (slug, title, duration_minutes) values ('x', 'x', 30)")).code).toBe(
         "42501",
@@ -296,8 +296,8 @@ describe("booking widgets", () => {
       await client.query("reset role");
 
       await actAs(client, "authenticated", member);
-      expect(await scalar(client, "select count(*)::int from public.booking_widgets")).toBe(1);
-      expect(await scalar(client, "select count(*)::int from public.booking_widget_hosts")).toBe(1);
+      expect(await scalar(client, "select count(*)::int from public.booking_widgets where id = $1", [id])).toBe(1);
+      expect(await scalar(client, "select count(*)::int from public.booking_widget_hosts where widget_id = $1", [id])).toBe(1);
       expect((await sqlError(client, "update public.booking_widgets set active = false")).code).toBe("42501");
       expect((await sqlError(client, "delete from public.booking_widget_hosts")).code).toBe("42501");
       expect(
@@ -360,6 +360,7 @@ describe("website default", () => {
 
   it("refuses round robin when nobody is bookable", () =>
     rollback(async (client) => {
+      await client.query("update public.profiles set bookable = false"); // the seed has a bookable host
       const admin = await addProfile(client, "solo@example.com", { isAdmin: true });
       await actAs(client, "authenticated", admin);
       expect((await sqlError(client, "select public.set_website_bookings('round_robin', null)")).code).toBe("P0002");
