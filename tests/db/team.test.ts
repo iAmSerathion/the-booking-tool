@@ -378,3 +378,99 @@ describe("last admin under concurrency", () => {
   it("lets only one of two mutual deactivations through", () =>
     race((self, other) => [deactivateSql, [other, self, self, plan()]], "service_role"));
 });
+
+const admitSql = "select public.admit_profile($1, $2)";
+
+describe("admit_profile", () => {
+  it("is for the service role only", () =>
+    rollback(async (client) => {
+      const id = await createAuthUser(client, "new@example.com");
+      for (const [role, user] of [
+        ["anon", undefined],
+        ["authenticated", id],
+      ] as const) {
+        await as(client, role, user, async () => expect((await sqlError(client, admitSql, [id, false])).code, role).toBe("42501"));
+      }
+    }));
+
+  it("creates a member from the verified auth user with starting availability", () =>
+    rollback(async (client) => {
+      const id = await createAuthUser(client, "Jane.Doe@Example.com");
+      await client.query(`update auth.users set raw_user_meta_data = '{"full_name": " Jane Doe "}' where id = $1`, [id]);
+      await as(client, "service_role", undefined, () => client.query(admitSql, [id, false]));
+      const { rows } = await client.query("select name, email::text, is_admin, bookable, active from public.profiles where id = $1", [id]);
+      expect(rows[0]).toEqual({ name: "Jane Doe", email: "jane.doe@example.com", is_admin: false, bookable: false, active: true });
+      expect(await scalar(client, "select count(*)::int from public.availability_windows where user_id = $1", [id])).toBe(10);
+    }));
+
+  it("creates the first admin only while no active admin exists", () =>
+    rollback(async (client) => {
+      const first = await createAuthUser(client, "first@example.com");
+      const second = await createAuthUser(client, "second@example.com");
+      // A fresh install: the seeded admin is not there (an inactive admin does not count).
+      await client.query("update public.profiles set active = false where is_admin");
+      await as(client, "service_role", undefined, () => client.query(admitSql, [first, true]));
+      expect(await scalar(client, "select is_admin from public.profiles where id = $1", [first])).toBe(true);
+      await as(client, "service_role", undefined, async () => expect((await sqlError(client, admitSql, [second, true])).code).toBe("42501"));
+      expect(await scalar(client, "select count(*)::int from public.profiles where id = $1", [second])).toBe(0);
+    }));
+
+  it("refuses the seeded install, existing profiles and unknown users", () =>
+    rollback(async (client) => {
+      const id = await createAuthUser(client, "late@example.com");
+      await as(client, "service_role", undefined, async () => {
+        expect((await sqlError(client, admitSql, [id, true])).code).toBe("42501");
+        await client.query(admitSql, [id, false]);
+        expect((await sqlError(client, admitSql, [id, false])).code).toBe("23505");
+        expect((await sqlError(client, admitSql, ["00000000-0000-4000-8000-0000000000ff", false])).code).toBe("P0002");
+      });
+    }));
+
+  it("refuses an email that another profile already has", () =>
+    rollback(async (client) => {
+      const id = await createAuthUser(client, "ADMIN.demo@example.com");
+      await as(client, "service_role", undefined, async () => expect((await sqlError(client, admitSql, [id, false])).code).toBe("23505"));
+    }));
+
+  // Two first sign-ins at once: the second waits on 'team:admins' and must fail once the first commits.
+  it("lets only one of two concurrent first admins through", async () => {
+    const setup = await pool.connect();
+    const a = await pool.connect();
+    const b = await pool.connect();
+    const ids: string[] = [];
+    const { rows: admins } = await setup.query<{ id: string }>("update public.profiles set active = false where is_admin and active returning id");
+    try {
+      ids.push(await createAuthUser(setup, "race-first@example.com"), await createAuthUser(setup, "race-second@example.com"));
+      await a.query("begin");
+      await actAs(a, "service_role");
+      await a.query(admitSql, [ids[0], true]);
+
+      await b.query("begin");
+      await actAs(b, "service_role");
+      const pidB = await scalar<number>(b, "select pg_backend_pid()");
+      const second = b.query(admitSql, [ids[1], true]).then(
+        () => "ok",
+        (error: { code: string }) => error.code,
+      );
+      let waiting = false;
+      for (let i = 0; i < 50 && !waiting; i++) {
+        const { rows } = await setup.query("select wait_event_type, wait_event from pg_stat_activity where pid = $1", [pidB]);
+        waiting = rows[0]?.wait_event_type === "Lock" && rows[0]?.wait_event === "advisory";
+        if (!waiting) await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(waiting).toBe(true);
+
+      await a.query("commit");
+      expect(await second).toBe("42501");
+      await b.query("rollback");
+      expect(await scalar(setup, "select count(*)::int from public.profiles where id = any($1) and is_admin", [ids])).toBe(1);
+    } finally {
+      await a.query("rollback").catch(() => {});
+      await b.query("rollback").catch(() => {});
+      await setup.query("delete from public.availability_windows where user_id = any($1)", [ids]);
+      for (const id of ids) await removeProfile(setup, id);
+      await setup.query("update public.profiles set active = true where id = any($1)", [admins.map((row) => row.id)]);
+      for (const c of [setup, a, b]) c.release();
+    }
+  });
+});
