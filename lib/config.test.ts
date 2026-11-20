@@ -34,6 +34,8 @@ describe("parseConfig", () => {
     expect(config.trustProxyHeaders).toBe(false);
     expect(config.bookingAttemptsPerMinute).toBe(10);
     expect(config.webhook).toBeNull();
+    expect(config.google.hostedDomain).toBeNull();
+    expect(config.initialAdminEmail).toBeNull();
   });
 
   it("lists every missing required variable at once", () => {
@@ -75,6 +77,18 @@ describe("parseConfig", () => {
 
   it("normalizes allowed Google domains", () => {
     expect(parseConfig({ ...valid, ALLOWED_GOOGLE_DOMAINS: " Example.com, ,other.org " }).google.allowedDomains).toEqual(["example.com", "other.org"]);
+  });
+});
+
+describe("sign-in settings", () => {
+  it("lowercases the initial admin email and hosted domain", () => {
+    const config = parseConfig({ ...valid, INITIAL_ADMIN_EMAIL: " Admin@Example.com ", GOOGLE_HOSTED_DOMAIN: "Example.com" });
+    expect(config.initialAdminEmail).toBe("admin@example.com");
+    expect(config.google.hostedDomain).toBe("example.com");
+  });
+
+  it("rejects an initial admin that is not an email address", () => {
+    expect(problems({ ...valid, INITIAL_ADMIN_EMAIL: "admin" })).toEqual(["INITIAL_ADMIN_EMAIL must be an email address"]);
   });
 });
 
