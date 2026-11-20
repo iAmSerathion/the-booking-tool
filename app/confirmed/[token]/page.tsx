@@ -3,13 +3,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { loadConfirmation } from "@/lib/booking/data";
 import { getConfig } from "@/lib/config";
-import { slotLong, timeZoneLabel } from "@/lib/core/booking";
+import { bookingChange } from "@/lib/core/change";
 import { t } from "@/lib/i18n";
+import { BookingFacts, ChangeLinks } from "../../_booking/facts";
 import { Frame } from "../../_booking/frame";
 import styles from "../../_booking/booking.module.css";
 
-// The invitee's confirmation behind the token from the booking redirect (later also from mails). A wrong token gets the
-// plain 404 page, so it reveals nothing. Only the token's hash is looked up.
+// The invitee's confirmation behind the token from the booking redirect (later also from mails), with the links to
+// reschedule or cancel. A wrong token gets the plain 404 page, so it reveals nothing. Only the token's hash is looked up.
 
 export async function generateMetadata(): Promise<Metadata> {
   await connection();
@@ -23,7 +24,6 @@ export default async function ConfirmedPage({ params, searchParams }: PageProps<
   const booking = await loadConfirmation(token);
   if (!booking) notFound();
   const { locale } = getConfig();
-  const start = new Date(booking.startsAt);
   const cancelled = booking.state === "cancelled";
 
   return (
@@ -31,25 +31,8 @@ export default async function ConfirmedPage({ params, searchParams }: PageProps<
       <section className={styles.confirm}>
         <h1>{t(locale, cancelled ? "confirmed.cancelled" : "confirmed.heading")}</h1>
         {!cancelled && fresh === "1" && <p>{t(locale, "confirmed.invitationSent")}</p>}
-        <dl className={styles.facts}>
-          <dt>{t(locale, "confirmed.what")}</dt>
-          <dd>{booking.eventTitle}</dd>
-          <dt>{t(locale, "confirmed.when")}</dt>
-          <dd>
-            {slotLong(start, new Date(booking.endsAt), booking.timeZone, locale)}
-            <br />
-            <span className={styles.muted}>{timeZoneLabel(booking.timeZone, start, locale)}</span>
-          </dd>
-          <dt>{t(locale, "confirmed.with")}</dt>
-          <dd>{booking.hostName}</dd>
-          {!cancelled && (
-            <>
-              <dt>{t(locale, "confirmed.where")}</dt>
-              <dd>{booking.meetUrl?.startsWith("https://") ? <a href={booking.meetUrl}>{t(locale, "confirmed.meetLink")}</a> : t(locale, "confirmed.invitation")}</dd>
-            </>
-          )}
-        </dl>
-        {/* M5: reschedule and cancel links (/reschedule/<token>, /cancel/<token>) go here. */}
+        <BookingFacts booking={booking} where={!cancelled} />
+        <ChangeLinks token={token} change={bookingChange(booking, new Date())} />
       </section>
     </Frame>
   );
