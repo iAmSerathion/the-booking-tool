@@ -39,12 +39,20 @@ jobs:
       GOOGLE_CLIENT_SECRET: ci-placeholder
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
       - uses: supabase/setup-cli@v1
         with:
           version: 2.122.0
       - run: supabase start -x studio,imgproxy,vector,logflare,supavisor,edge-runtime,realtime,storage-api,mailpit,postgres-meta
       - run: supabase db reset
       - run: supabase db lint --fail-on error
+      - run: npm run test:db
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
 
   secrets:
     runs-on: ubuntu-latest
