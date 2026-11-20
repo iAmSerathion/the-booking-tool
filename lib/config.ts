@@ -87,8 +87,12 @@ export function parseConfig(env: Env): Config {
     }
   };
 
-  const appUrl = url("APP_URL", ["https:", "http:"]);
-  if (appUrl && new URL(appUrl).pathname !== "/") problems.push("APP_URL must be an origin without a path");
+  let appUrl = url("APP_URL", ["https:", "http:"]);
+  if (appUrl) {
+    const origin = new URL(appUrl).origin;
+    if (origin !== appUrl) problems.push("APP_URL must be an origin only (no path, query, fragment or credentials)");
+    appUrl = origin;
+  }
   const supabaseUrl = url("NEXT_PUBLIC_SUPABASE_URL", ["https:", "http:"]);
   const smtpUrl = url("SMTP_URL", ["smtp:", "smtps:"]);
   const logoUrl = url("BRAND_LOGO_URL", ["https:"]);
@@ -102,9 +106,10 @@ export function parseConfig(env: Env): Config {
   const locale = get("DEFAULT_LOCALE");
   if (locale && !(locales as readonly string[]).includes(locale)) problems.push(`DEFAULT_LOCALE must be one of: ${locales.join(", ")}`);
 
-  const timeZone = get("DEFAULT_TIMEZONE") ?? "Europe/Berlin";
+  let timeZone = get("DEFAULT_TIMEZONE") ?? "Europe/Berlin";
   try {
-    new Intl.DateTimeFormat("en", { timeZone });
+    // Intl accepts any casing; store the canonical name that Postgres and Google expect.
+    timeZone = new Intl.DateTimeFormat("en", { timeZone }).resolvedOptions().timeZone;
   } catch {
     problems.push("DEFAULT_TIMEZONE must be an IANA time zone, e.g. Europe/Berlin");
   }
