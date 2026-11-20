@@ -3,7 +3,7 @@ import { ConfigError, parseConfig, readBrandName, readLocale } from "./config";
 
 const valid = {
   APP_URL: "https://booking.example.com/",
-  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54421",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon",
   SUPABASE_SERVICE_ROLE_KEY: "service",
   GOOGLE_CLIENT_ID: "client",
