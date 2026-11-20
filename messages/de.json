@@ -5,5 +5,13 @@
   "login.intro": "Melde dich mit deinem Google-Konto an.",
   "login.google": "Mit Google anmelden",
   "login.noAccess": "Dieses Google-Konto hat keinen Zugang. Bitte lass dich von einem Admin einladen.",
-  "login.failed": "Die Anmeldung hat nicht geklappt. Bitte versuch es noch einmal."
+  "login.failed": "Die Anmeldung hat nicht geklappt. Bitte versuch es noch einmal.",
+  "booking.error.name": "Bitte trag deinen Namen ein.",
+  "booking.error.email": "Bitte trag deine E-Mail ein.",
+  "booking.error.emailInvalid": "Bitte prüf die E-Mail, sie sieht nicht vollständig aus.",
+  "booking.error.privacy": "Bitte bestätige, dass du die Datenschutzhinweise gelesen hast.",
+  "booking.error.answerRequired": "Bitte beantworte diese Frage.",
+  "booking.error.answerInvalid": "Bitte wähl eine der Antworten.",
+  "booking.error.already": "Du hast schon einen Termin am {when}.",
+  "booking.slotRange": "{day}, {start} bis {end}"
 }
