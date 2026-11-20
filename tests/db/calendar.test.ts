@@ -85,6 +85,49 @@ describe("calendar connection functions", () => {
       expect(await scalar(client, "select count(*)::int from vault.secrets where id = $1", [secret])).toBe(0);
     }));
 
+  it("keeps busy calendars and sync state on a reconnect with the same account", () =>
+    rollback(async (client) => {
+      const id = await addProfile(client, "same@example.com");
+      await connect(client, id);
+      await client.query(
+        "update public.calendar_connections set busy_calendar_ids = '{primary@example.com,team@example.com}', sync_token = 's1', channel_id = 'c1' where user_id = $1",
+        [id],
+      );
+      await client.query(save, [id, "OWNER@example.com", "token-2", ["calendar"], "primary@example.com"]);
+      const { rows } = await client.query("select busy_calendar_ids, sync_token, channel_id from public.calendar_connections where user_id = $1", [id]);
+      expect(rows[0]).toEqual({ busy_calendar_ids: ["primary@example.com", "team@example.com"], sync_token: "s1", channel_id: "c1" });
+    }));
+
+  it("resets busy calendars, sync state and push channel when another Google account is connected", () =>
+    rollback(async (client) => {
+      const id = await addProfile(client, "switch@example.com");
+      await connect(client, id);
+      await client.query(
+        `update public.calendar_connections set busy_calendar_ids = '{primary@example.com,team@example.com}', sync_token = 's1', synced_at = now(),
+           channel_id = 'c1', channel_resource_id = 'r1', channel_token_hash = 'h1', channel_expires_at = now(), channel_renewed_at = now() where user_id = $1`,
+        [id],
+      );
+      await client.query(save, [id, "New@Example.com", "token-2", ["calendar"], "new@example.com"]);
+      const { rows } = await client.query(
+        `select account_email, primary_calendar_id, busy_calendar_ids, sync_token, synced_at, channel_id, channel_resource_id, channel_token_hash,
+           channel_expires_at, channel_renewed_at from public.calendar_connections where user_id = $1`,
+        [id],
+      );
+      expect(rows[0]).toEqual({
+        account_email: "new@example.com",
+        primary_calendar_id: "new@example.com",
+        busy_calendar_ids: ["new@example.com"],
+        sync_token: null,
+        synced_at: null,
+        channel_id: null,
+        channel_resource_id: null,
+        channel_token_hash: null,
+        channel_expires_at: null,
+        channel_renewed_at: null,
+      });
+      expect(await scalar(client, "select public.google_refresh_token($1)", [id])).toBe("token-2");
+    }));
+
   it("replaces a leftover secret with the same name", () =>
     rollback(async (client) => {
       const id = await addProfile(client, "leftover@example.com");
@@ -287,5 +330,62 @@ describe("set_availability_day", () => {
       await client.query("rollback to savepoint s");
       await actAs(client, "anon");
       expect((await sqlError(client, call, [1, "[]"])).code).toBe("42501");
+    }));
+});
+
+describe("set_availability_week", () => {
+  const call = "select public.set_availability_week($1::jsonb)";
+  const week = (days: Record<number, { start: string; end: string }[]>) => JSON.stringify(Array.from({ length: 7 }, (_, i) => days[i + 1] ?? []));
+  const windows = (client: Client, id: string) =>
+    client.query("select weekday, start_time::text from public.availability_windows where user_id = $1 order by weekday, start_time", [id]);
+
+  it("replaces all seven days at once", () =>
+    rollback(async (client) => {
+      const id = await addProfile(client, "week@example.com");
+      await actAs(client, "authenticated", id);
+      await client.query(call, [week({ 1: [{ start: "08:00", end: "09:30" }, { start: "13:00", end: "15:00" }], 7: [{ start: "10:00", end: "11:00" }] })]);
+      expect((await windows(client, id)).rows).toEqual([
+        { weekday: 1, start_time: "08:00:00" },
+        { weekday: 1, start_time: "13:00:00" },
+        { weekday: 7, start_time: "10:00:00" },
+      ]);
+      await client.query(call, [week({})]);
+      expect((await windows(client, id)).rows).toEqual([]);
+    }));
+
+  it("leaves every day unchanged when one day overlaps", () =>
+    rollback(async (client) => {
+      const id = await addProfile(client, "weekfail@example.com");
+      const before = (await windows(client, id)).rows;
+      expect(before.length).toBeGreaterThan(0);
+      await actAs(client, "authenticated", id);
+      const error = await sqlError(client, call, [week({ 1: [{ start: "08:00", end: "09:00" }], 5: [{ start: "08:00", end: "10:00" }, { start: "09:30", end: "11:00" }] })]);
+      expect(error.code).toBe("23514");
+      expect((await windows(client, id)).rows).toEqual(before);
+    }));
+
+  it("only touches the caller's windows and rejects a wrong shape", () =>
+    rollback(async (client) => {
+      const me = await addProfile(client, "weekme@example.com");
+      const other = await addProfile(client, "weekother@example.com");
+      const othersBefore = (await windows(client, other)).rows;
+      await actAs(client, "authenticated", me);
+      await client.query(call, [week({})]);
+      expect((await sqlError(client, call, ["[[], []]"])).code).toBe("22023");
+      expect((await sqlError(client, call, ['{"a": 1}'])).code).toBe("22023");
+      expect((await sqlError(client, call, [JSON.stringify([1, 2, 3, 4, 5, 6, 7])])).code).toBe("22023");
+      await client.query("reset role");
+      expect((await windows(client, other)).rows).toEqual(othersBefore);
+    }));
+
+  it("rejects anon and deactivated members", () =>
+    rollback(async (client) => {
+      const gone = await addProfile(client, "weekoff@example.com", false);
+      await client.query("savepoint s");
+      await actAs(client, "authenticated", gone);
+      expect((await sqlError(client, call, [week({})])).code).toBe("42501");
+      await client.query("rollback to savepoint s");
+      await actAs(client, "anon");
+      expect((await sqlError(client, call, [week({})])).code).toBe("42501");
     }));
 });
