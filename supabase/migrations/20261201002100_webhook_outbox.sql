@@ -114,3 +114,8 @@ $$;
 
 revoke execute on function public.claim_booking_outbox(timestamptz, integer, integer, uuid, boolean) from public, anon, authenticated;
 grant execute on function public.claim_booking_outbox(timestamptz, integer, integer, uuid, boolean) to service_role;
+
+-- Rows written before this migration carry the old raw-bookings payload, which consumers must never see: give them up.
+update public.booking_outbox
+set given_up_at = now(), last_error = 'old payload'
+where delivered_at is null and given_up_at is null;
