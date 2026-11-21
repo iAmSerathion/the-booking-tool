@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { busyCacheTag, loadOffer } from "@/lib/availability/data";
 import { getConfig } from "@/lib/config";
 import { cleanBookingInput, eventSummary, looksLikeBot, roundRobinOrder, validateBooking } from "@/lib/core/booking";
@@ -13,6 +14,7 @@ import { createAdminSupabase } from "@/lib/db/admin";
 import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
 import { type MessageKey, t } from "@/lib/i18n";
+import { sendConfirmationMails } from "@/lib/mail/booking";
 import { type ChannelRef, lastRoundRobinBookings, loadContext, type PublicSlot, publicSlots } from "./data";
 import { withinLimit } from "./limit";
 import { hashToken, newToken } from "./token";
@@ -202,8 +204,9 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
 
     // The public pages must not offer this time from the busy cache any longer.
     updateTag(busyCacheTag(hostId));
-    // M8 seams: plan the booking's jobs and send the confirmation mail here (after()). M9 delivers the outbox row that
-    // create_booking already wrote.
+    // Confirmation to the invitee and notice to the host, after the response. M8 seam: plan the booking's jobs here too.
+    // M9 delivers the outbox row that create_booking already wrote.
+    after(() => sendConfirmationMails(bookingId, token));
     // Widget bookings stay inside the frame: /confirmed sends frame-ancestors 'none'.
     redirect(ref.kind === "widget" ? widgetConfirmationPath(ref.id, ref.view, token, true) : `/confirmed/${token}?new=1`);
   }
