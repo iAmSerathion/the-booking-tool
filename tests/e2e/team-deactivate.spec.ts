@@ -34,6 +34,15 @@ async function deactivateWith(page: Page, leaving: Host, successor: Host) {
 }
 
 const unique = (name: string) => `${name} ${randomUUID().slice(0, 8)}`;
+// Inserts an event straight into a fake calendar, as the member (the fake takes "fake-access-<email>" tokens).
+const addEvent = async (calendar: string, body: Record<string, unknown>) =>
+  (
+    await fetch(`${googleFakeUrl}/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`, {
+      method: "POST",
+      headers: { authorization: `Bearer fake-access-${calendar}`, "content-type": "application/json" },
+      body: JSON.stringify({ summary: "Other", ...body }),
+    }).then((r) => r.json())
+  ).id as string;
 const granted = async (email: string) => (await fetch(`${googleFakeUrl}/control/granted?email=${encodeURIComponent(email)}`).then((r) => r.json())).scopes as string[];
 
 test("an admin deactivates a member: the booking gets a new event at the successor, the widget moves, the member is out; reactivating gives nothing back", async ({
@@ -47,6 +56,10 @@ test("an admin deactivates a member: the booking gets a new event at the success
   try {
     const before = await bookWith(browser, leaving);
     expect(before.meet_url).toBeTruthy();
+    // An event a booking left behind (its booking was never saved), and one of the member's own.
+    const at = (hours: number) => ({ dateTime: new Date(Date.parse(before.starts_at) + hours * 3_600_000).toISOString(), timeZone: "UTC" });
+    const orphan = await addEvent(leaving.email, { start: at(2), end: at(3), extendedProperties: { private: { booking_id: randomUUID() } } });
+    const own = await addEvent(leaving.email, { start: at(4), end: at(5) });
 
     await signInAs(context, baseURL, adminEmail);
     await page.goto("/app/team");
@@ -72,6 +85,9 @@ test("an admin deactivates a member: the booking gets a new event at the success
     // The old event is cancelled at Google (the invitee hears of it) and the member's Google grant is gone.
     const old = (await fakeEvents(leaving.email)).find((e) => e.id === before.google_event_id);
     expect(old).toMatchObject({ status: "cancelled", deleteQuery: { sendUpdates: "all" } });
+    const left = await fakeEvents(leaving.email);
+    expect(left.find((e) => e.id === orphan)).toMatchObject({ status: "cancelled", deleteQuery: { sendUpdates: "all" } });
+    expect(left.find((e) => e.id === own)).toMatchObject({ status: "confirmed" });
     expect((await admin().rpc("google_refresh_token", { p_user_id: leaving.id })).data).toBeNull();
     expect(await granted(leaving.email)).toEqual([]);
 
