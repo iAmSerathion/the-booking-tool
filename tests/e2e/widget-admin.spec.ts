@@ -99,6 +99,46 @@ test("an admin creates a widget for an allowed site, its snippets embed it there
   }
 });
 
+test("editing a widget whose event type was switched off makes the admin pick an active one", async ({ page, context }) => {
+  const host = await newHost({ name: `Rowan ${randomUUID().slice(0, 8)}` });
+  const suffix = randomUUID().slice(0, 8);
+  // Its own switched-off event type, so the seeded one stays on for the other tests.
+  const { data: type, error } = await admin()
+    .from("event_types")
+    .insert({ slug: `retired-${suffix}`, title: `Retired ${suffix}`, duration_minutes: 30, active: false })
+    .select("id")
+    .single();
+  if (error) throw error;
+  const id = await newWidget([host.id], { mode: "person", eventTypeId: type.id });
+  try {
+    const { name } = (await admin().from("booking_widgets").select("name").eq("id", id).single()).data!;
+    await signInAs(context, baseURL, adminEmail);
+    await page.goto("/app/widgets");
+    const item = card(page, name);
+    await expect(item.getByText(`Retired ${suffix}`, { exact: true })).toBeVisible();
+    await item.getByText("Edit", { exact: true }).click();
+    const select = item.getByLabel("Event type");
+    await expect(select).toHaveValue("");
+    await expect(select.getByRole("option", { name: `Retired ${suffix} (switched off)` })).toBeDisabled();
+
+    // Saving without a choice is refused by the form, and the widget keeps its event type.
+    await item.getByLabel("Allowed sites").fill("https://www.example.com");
+    await item.getByRole("button", { name: "Save widget" }).click();
+    expect(await select.evaluate((el: HTMLSelectElement) => el.validity.valueMissing)).toBe(true);
+    await expect(item.getByRole("status").filter({ hasText: "Saved." })).toHaveCount(0);
+    expect((await widgetByName(name)).event_type_id).toBe(type.id);
+
+    await select.selectOption({ label: "Discovery call" });
+    await item.getByRole("button", { name: "Save widget" }).click();
+    await expect(item.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+    expect(await widgetByName(name)).toMatchObject({ event_type_id: discoveryCall, allowed_origins: ["https://www.example.com"] });
+  } finally {
+    await removeWidget(id);
+    await admin().from("event_types").delete().eq("id", type.id);
+    await removeHost(host.id);
+  }
+});
+
 test("the admin pages fit a phone and a desktop screen", async ({ page, context }) => {
   await signInAs(context, baseURL, adminEmail);
   for (const width of [390, 1440]) {

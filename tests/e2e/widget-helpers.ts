@@ -6,10 +6,10 @@ import { admin } from "./session";
 // and the seeded widget is left alone.
 export const discoveryCall = "00000000-0000-4000-8000-000000000101";
 
-export async function newWidget(hostIds: string[], { mode = "round_robin", active = true, origins = [embedOrigin] } = {}) {
+export async function newWidget(hostIds: string[], { mode = "round_robin", active = true, origins = [embedOrigin], eventTypeId = discoveryCall } = {}) {
   const { data, error } = await admin()
     .from("booking_widgets")
-    .insert({ name: `Widget ${randomUUID().slice(0, 8)}`, mode, event_type_id: discoveryCall, allowed_origins: origins, active })
+    .insert({ name: `Widget ${randomUUID().slice(0, 8)}`, mode, event_type_id: eventTypeId, allowed_origins: origins, active })
     .select("id")
     .single();
   if (error) throw error;
