@@ -14,7 +14,7 @@ import { SlotPicker, useHydrated, useInviteeZone } from "./slot-picker";
 // The booking form: pick a day and time in the invitee's zone, enter details and answers, book. Everything is checked
 // here for quick feedback and again in the server action, which redirects to the confirmation page on success.
 
-type Props = {
+export type BookingProps = {
   action: (form: BookingForm) => Promise<BookingResult>;
   locale: Locale;
   // The instance zone: the server render and the fallback when the browser reports none.
@@ -25,14 +25,19 @@ type Props = {
   hostName: string | null;
   meet: boolean;
   slots: PublicSlot[];
-  // Booking links: initial values the invitee can still change.
+  // Booking links and widgets: values the invitee can still change. A widget's prefill may arrive (or change) after
+  // load; it then fills only the fields the invitee has not changed.
   prefill?: Prefill;
 };
+
+const noPrefill: Prefill = {};
+// An answer the invitee has not changed still equals what was prefilled (or is empty).
+const sameAnswer = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 type Answers = Record<string, string | string[]>;
 const fieldNames = ["name", "email", "company", "phone", "topic"] as const;
 
-export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, eventType, hostName, meet, slots: initialSlots, prefill = {} }: Props) {
+export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, eventType, hostName, meet, slots: initialSlots, prefill = noPrefill }: BookingProps) {
   const [timeZone, setTimeZone] = useInviteeZone(defaultTimeZone, prefill.timeZone);
 
   const [slots, setSlots] = useState(initialSlots);
@@ -42,10 +47,25 @@ export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, even
     email: prefill.email ?? "",
     company: prefill.company ?? "",
     phone: prefill.phone ?? "",
-    topic: "",
+    topic: prefill.topic ?? "",
     privacy: false,
   });
   const [answers, setAnswers] = useState<Answers>(prefill.answers ?? {});
+  // Adjusting state while rendering, as React recommends for props that change: no effect, no extra paint.
+  const [applied, setApplied] = useState(prefill);
+  if (applied !== prefill) {
+    setApplied(prefill);
+    setFields((f) => {
+      const next = { ...f };
+      for (const name of fieldNames) if (prefill[name] !== undefined && f[name] === (applied[name] ?? "")) next[name] = prefill[name];
+      return next;
+    });
+    setAnswers((a) => {
+      const next = { ...a };
+      for (const [id, value] of Object.entries(prefill.answers ?? {})) if (sameAnswer(a[id], applied.answers?.[id])) next[id] = value;
+      return next;
+    });
+  }
   const [errors, setErrors] = useState<Record<string, MessageKey>>({});
   const [formError, setFormError] = useState<MessageKey | null>(null);
   const [pending, startTransition] = useTransition();

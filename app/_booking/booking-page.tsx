@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/config";
 import { Booking } from "./booking";
 import { Frame } from "./frame";
 import { LinkClosed } from "./link-closed";
+import { WidgetBooking } from "./widget-booking";
 import { WidgetClosed } from "./widget-closed";
 
 // A public booking page: "/" (website default), "/<slug>" (one member), "/l/<token>" (a booking link) or a widget
@@ -17,21 +18,26 @@ export async function BookingPage({ channel }: { channel: ChannelRef }) {
   const { context, slots } = page;
   const config = getConfig();
   const { title, description, durationMinutes, questions } = context.eventType;
-  return (
-    <Frame embed={channel.kind === "widget" ? channel.view : undefined}>
-      <Booking
-        // Bound on the server, so the browser cannot switch the page it books on.
-        action={bookSlot.bind(null, channel)}
-        locale={config.locale}
-        defaultTimeZone={config.timeZone}
-        privacyUrl={config.brand.privacyUrl}
-        now={new Date().toISOString()}
-        eventType={{ title, description, durationMinutes, questions }}
-        hostName={context.hosts.length === 1 ? context.hosts[0].name : null}
-        meet={context.hosts.length > 0 && context.hosts.every((h) => h.meetAuto)}
-        slots={slots}
-        prefill={context.prefill}
-      />
+  const props = {
+    // Bound on the server, so the browser cannot switch the page it books on.
+    action: bookSlot.bind(null, channel),
+    locale: config.locale,
+    defaultTimeZone: config.timeZone,
+    privacyUrl: config.brand.privacyUrl,
+    now: new Date().toISOString(),
+    eventType: { title, description, durationMinutes, questions },
+    hostName: context.hosts.length === 1 ? context.hosts[0].name : null,
+    meet: context.hosts.length > 0 && context.hosts.every((h) => h.meetAuto),
+    slots,
+  };
+  return channel.kind === "widget" ? (
+    // The host page's prefill arrives through the bridge, not from the server.
+    <Frame embed={channel.view}>
+      <WidgetBooking {...props} />
+    </Frame>
+  ) : (
+    <Frame>
+      <Booking {...props} prefill={context.prefill} />
     </Frame>
   );
 }

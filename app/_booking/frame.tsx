@@ -6,11 +6,11 @@ import styles from "./booking.module.css";
 
 // The public pages' frame: brand from the instance config, privacy and imprint links when they are set. Inside a widget
 // (embed) the frame is as tall as its content, so the host page can size the iframe: the window keeps a slim brand
-// header, the section shows neither header nor footer.
+// header, the section shows neither header nor footer. The bridge measures data-widget-root.
 export function Frame({ children, embed }: { children: ReactNode; embed?: WidgetView }) {
   const { brand, locale } = getConfig();
   return (
-    <div className={embed ? `${styles.frame} ${styles.embedded}` : styles.frame}>
+    <div className={embed ? `${styles.frame} ${styles.embedded}` : styles.frame} data-widget-root={embed ? "" : undefined}>
       {embed !== "section" && (
         <header className={styles.header}>
           {brand.logoUrl && (
