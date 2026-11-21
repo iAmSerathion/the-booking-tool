@@ -53,7 +53,8 @@ export async function postWebhook(webhook: Webhook, row: OutboxRow): Promise<str
 // Scheduler step. now: the scheduler's clock (simulated in tests) decides what is due and when a retry is; onlyBooking
 // scopes a test run to one booking. Without WEBHOOK_URL the claim gives due rows up instead of returning them.
 // budgetMs: wall-clock time (the real clock, not now) after which no new round is claimed and no new POST starts, so
-// minute runs do not pile up; a POST already started may finish (webhookTimeoutMs), keeping a run near 50 s at worst.
+// minute runs do not pile up; a POST already started may finish (webhookTimeoutMs), keeping this step near 50 s at worst
+// (the scheduler steps before it have no budget of their own).
 // Rows claimed but not tried keep their short lease and a later run picks them up, without using an attempt.
 export async function dispatchOutbox({ now = new Date(), onlyBooking = null, budgetMs = 40_000 }: { now?: Date; onlyBooking?: string | null; budgetMs?: number } = {}) {
   const deadline = Date.now() + budgetMs;
