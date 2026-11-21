@@ -46,9 +46,11 @@ vi.mock("@/lib/db/admin", () => ({
         const filters: [string, unknown][] = [];
         const chain = {
           eq: (column: string, value: unknown) => (filters.push([column, value]), chain),
+          select: () => chain,
           then: (resolve: (r: unknown) => unknown) => {
-            for (const row of state.rows) if (filters.every(([c, v]) => row[c] === v)) Object.assign(row, values);
-            return resolve({ error: null });
+            const matched = state.rows.filter((row) => filters.every(([c, v]) => row[c] === v));
+            for (const row of matched) Object.assign(row, values);
+            return resolve({ data: matched.map((row) => ({ id: row.id })), error: null });
           },
         };
         return chain;
@@ -137,6 +139,28 @@ describe("sendMail", () => {
     expect(state.rows[0]).toMatchObject({ state: "sent", attempts: 2, last_error: null });
     expect(state.sent).toMatchObject([{ subject: "Confirmed: Bcc: x@example.com", replyTo: "host@example.com", html: "<p>Hello</p>" }]);
     expect(await retryDueMails({ onlyBooking: "b1" })).toEqual({ sent: 0, retry: 0, failed: 0 });
+  });
+
+  it("sends a row two overlapping scheduler runs both claimed only once", async () => {
+    state.failSends = 1;
+    expect(await sendMail(mail())).toBe("retry");
+    // Run B claims the row again after run A's lease ran out while A was still busy with its batch.
+    state.claimed = [state.rows[0].id];
+    const runs = await Promise.all([retryDueMails({ onlyBooking: "b1" }), retryDueMails({ onlyBooking: "b1" })]);
+    expect(runs).toEqual([
+      { sent: 1, retry: 0, failed: 0 },
+      { sent: 0, retry: 0, failed: 0 },
+    ]);
+    expect(state.sent).toHaveLength(1);
+  });
+
+  it("does not send a claimed row once its send_until has passed during the batch", async () => {
+    state.failSends = 1;
+    expect(await sendMail(mail("reminder:b1", new Date(Date.now() + 86_400_000)))).toBe("retry");
+    state.rows[0].send_until = new Date(Date.now() - 1).toISOString();
+    state.claimed = [state.rows[0].id];
+    expect(await retryDueMails({ onlyBooking: "b1" })).toEqual({ sent: 0, retry: 0, failed: 0 });
+    expect(state.sent).toEqual([]);
   });
 
   it("fails at once when the next attempt would be past send_until", async () => {
