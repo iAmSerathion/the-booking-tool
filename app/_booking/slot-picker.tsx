@@ -48,6 +48,7 @@ export function SlotPicker({ locale, now, slots, timeZone, onTimeZone, start, on
 
   // The zone list and its Intl names depend on the browser's ICU data, which the server cannot know: until mounted (server
   // render and hydration) the select has only the current zone under its bare id, afterwards every zone with its name.
+  // Also gates the month and day buttons: a click before hydration would be lost.
   const mounted = useHydrated();
   const zones = useMemo(() => {
     if (!mounted) return [timeZone];
@@ -80,7 +81,7 @@ export function SlotPicker({ locale, now, slots, timeZone, onTimeZone, start, on
       ) : (
         <>
           <div className={styles.monthBar}>
-            <button type="button" className={styles.nav} onClick={() => setMonthIndex(monthIndex - 1)} disabled={monthIndex === 0} aria-label={t(locale, "booking.prevMonth")}>
+            <button type="button" className={styles.nav} onClick={() => setMonthIndex(monthIndex - 1)} disabled={!mounted || monthIndex === 0} aria-label={t(locale, "booking.prevMonth")}>
               ‹
             </button>
             <h3 aria-live="polite">{monthTitle(year, month, locale)}</h3>
@@ -88,7 +89,7 @@ export function SlotPicker({ locale, now, slots, timeZone, onTimeZone, start, on
               type="button"
               className={styles.nav}
               onClick={() => setMonthIndex(monthIndex + 1)}
-              disabled={monthIndex >= months.length - 1}
+              disabled={!mounted || monthIndex >= months.length - 1}
               aria-label={t(locale, "booking.nextMonth")}
             >
               ›
@@ -106,7 +107,7 @@ export function SlotPicker({ locale, now, slots, timeZone, onTimeZone, start, on
             {Array.from({ length: daysInMonth }, (_, i) => {
               const d = addDays(firstDay, i);
               return (
-                <button key={d} type="button" className={styles.day} disabled={!byDay.has(d)} aria-pressed={d === day} aria-label={dayTitle(d, locale)} onClick={() => setDay(d)}>
+                <button key={d} type="button" className={styles.day} disabled={!mounted || !byDay.has(d)} aria-pressed={d === day} aria-label={dayTitle(d, locale)} onClick={() => setDay(d)}>
                   {i + 1}
                 </button>
               );
