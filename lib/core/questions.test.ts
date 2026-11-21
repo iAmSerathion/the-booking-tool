@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerMaxLength, cleanMultiline, cleanText, type Question, validateAnswers } from "./questions";
+import { answerMaxLength, cleanMultiline, cleanText, parseQuestions, type Question, questionId, validateAnswers } from "./questions";
 
 describe("cleanText", () => {
   it("drops soft hyphens and invisible characters, control characters become spaces", () => {
@@ -89,5 +89,47 @@ describe("validateAnswers", () => {
 
   it("does not read inherited properties", () => {
     expect(validateAnswers([{ id: "constructor", label: "Q", type: "text", required: true }], {}).errors).toEqual({ constructor: "booking.error.answerRequired" });
+  });
+});
+
+describe("parseQuestions", () => {
+  const ok = (raw: unknown) => {
+    const result = parseQuestions(raw);
+    if ("error" in result) throw new Error(result.error);
+    return result.questions;
+  };
+
+  it("cleans labels and choices, keeps ids and makes new ones from labels", () => {
+    expect(
+      ok([
+        { id: "goal", label: "  Your goal ", type: "choice", choices: [" A ", "", "B", "A"], required: true },
+        { label: "Your goal", type: "multi", choices: ["X"] },
+        { label: "Anything else?", type: "text", choices: ["ignored"], required: "yes" },
+        { label: "2 people?", type: "text" },
+      ]),
+    ).toEqual([
+      { id: "goal", label: "Your goal", type: "choice", choices: ["A", "B"], required: true },
+      { id: "your-goal", label: "Your goal", type: "multi", choices: ["X"], required: false },
+      { id: "anything-else", label: "Anything else?", type: "text", required: false },
+      { id: "q-2-people", label: "2 people?", type: "text", required: false },
+    ]);
+  });
+
+  it("never reuses an id another question keeps", () => {
+    expect(ok([{ label: "Goal", type: "text" }, { id: "goal", label: "Old", type: "text" }]).map((q) => q.id)).toEqual(["goal-2", "goal"]);
+    expect(questionId("€€", new Set(["q"]))).toBe("q-2");
+  });
+
+  it("refuses what event_type_questions_valid refuses, with a message per question", () => {
+    expect(parseQuestions("nope")).toEqual({ error: "The questions could not be read. Please try again." });
+    expect(parseQuestions(Array.from({ length: 21 }, () => ({ label: "x", type: "text" })))).toEqual({ error: "An event type has at most 20 questions." });
+    expect(parseQuestions([{ label: " ", type: "text" }])).toEqual({ error: "Question 1 needs a label." });
+    expect(parseQuestions([{ label: "x".repeat(201), type: "text" }])).toEqual({ error: "Question 1: a label has at most 200 characters." });
+    expect(parseQuestions([{ label: "x", type: "date" }])).toEqual({ error: "Question 1: choose a type." });
+    expect(parseQuestions([{ label: "x", type: "choice", choices: [" "] }])).toEqual({ error: "Question 1 needs at least one choice." });
+    expect(parseQuestions([{ label: "x", type: "multi", choices: Array.from({ length: 31 }, (_, i) => `c${i}`) }])).toEqual({ error: "Question 1 has more than 30 choices." });
+    expect(parseQuestions([{ label: "x", type: "choice", choices: ["c".repeat(201)] }])).toEqual({ error: "Question 1: a choice has at most 200 characters." });
+    expect(parseQuestions([{ id: "Bad id", label: "x", type: "text" }])).toEqual({ error: "Question 1 could not be read. Please reload the page." });
+    expect(parseQuestions([{ id: "a", label: "x", type: "text" }, { id: "a", label: "y", type: "text" }])).toEqual({ error: "Question 2 could not be read. Please reload the page." });
   });
 });
