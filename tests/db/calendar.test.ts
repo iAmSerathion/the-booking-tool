@@ -48,7 +48,7 @@ describe("calendar connection functions", () => {
         ["select public.google_refresh_token($1)", [id]],
         ["select public.google_connection_delete($1)", [id]],
         ["select public.calendar_sync_claim($1)", [id]],
-        ["select public.calendar_sync_release($1, null, true)", [id]],
+        ["select public.calendar_sync_release($1, null, true, null)", [id]],
         ["select public.default_availability($1)", [id]],
       ] as const;
       for (const role of ["anon", "authenticated"] as const) {
@@ -208,25 +208,56 @@ describe("calendar_connections RLS", () => {
     }));
 });
 
+const claimSql = "select public.calendar_sync_claim($1)";
+const releaseSql = "select public.calendar_sync_release($1, $2, $3, $4)";
+const tokenSql = "select sync_token from public.calendar_connections where user_id = $1";
+
 describe("calendar sync claim and release", () => {
   it("runs one sync at a time and reports notifications that came in meanwhile", () =>
     rollback(async (client) => {
       const id = await addProfile(client, "sync@example.com");
       await connect(client, id);
       await actAs(client, "service_role");
-      const claim = "select public.calendar_sync_claim($1)";
-      const release = "select public.calendar_sync_release($1, $2, $3)";
+      const claim = async () => scalar<{ sync_token: string | null; primary_calendar_id: string; claimed_at: string } | null>(client, claimSql, [id]);
+      const release = (token: string, save: boolean, claimedAt: string) => scalar(client, releaseSql, [id, token, save, claimedAt]);
 
-      expect(await scalar(client, claim, [id])).toEqual({ sync_token: null, primary_calendar_id: "primary@example.com" });
-      expect(await scalar(client, claim, [id])).toBeNull();
-      expect(await scalar(client, release, [id, "s1", true])).toBe(true);
-      expect(await scalar(client, claim, [id])).toEqual({ sync_token: "s1", primary_calendar_id: "primary@example.com" });
-      expect(await scalar(client, release, [id, "s2", false])).toBe(false);
-      expect(await scalar(client, "select sync_token from public.calendar_connections where user_id = $1", [id])).toBe("s1");
+      const first = await claim();
+      expect(first).toMatchObject({ sync_token: null, primary_calendar_id: "primary@example.com" });
+      expect(await claim()).toBeNull();
+      expect(await release("s1", true, first!.claimed_at)).toBe(true);
+      const second = await claim();
+      expect(second).toMatchObject({ sync_token: "s1", primary_calendar_id: "primary@example.com" });
+      expect(await release("s2", false, second!.claimed_at)).toBe(false);
+      expect(await scalar(client, tokenSql, [id])).toBe("s1");
 
-      // A crashed claim older than two minutes may be taken over.
+      // A crashed claim older than two minutes may be taken over; the crashed one's late release then writes nothing.
+      const crashed = await claim();
       await client.query("update public.calendar_connections set sync_claimed_at = now() - interval '3 minutes' where user_id = $1", [id]);
-      expect(await scalar(client, claim, [id])).toEqual({ sync_token: "s1", primary_calendar_id: "primary@example.com" });
+      const takeover = await claim();
+      expect(takeover).toMatchObject({ sync_token: "s1", primary_calendar_id: "primary@example.com" });
+      expect(await release("stale", true, crashed!.claimed_at)).toBe(true);
+      expect(await scalar(client, tokenSql, [id])).toBe("s1");
+      expect(await release("s3", true, takeover!.claimed_at)).toBe(false);
+      expect(await scalar(client, tokenSql, [id])).toBe("s3");
+    }));
+
+  it("never stores the old calendar's token when the host switches accounts during a sync", () =>
+    rollback(async (client) => {
+      const id = await addProfile(client, "switch@example.com");
+      await connect(client, id);
+      await actAs(client, "service_role");
+      const running = await scalar<{ claimed_at: string }>(client, claimSql, [id]);
+
+      // The host reconnects with another account while the sync lists account A's calendar.
+      await client.query(save, [id, "other@example.com", "token-2", ["calendar"], "other-primary@example.com"]);
+      const row = async () =>
+        (await client.query("select sync_token, sync_claimed_at, sync_again from public.calendar_connections where user_id = $1", [id])).rows[0];
+      expect(await row()).toEqual({ sync_token: null, sync_claimed_at: null, sync_again: true });
+
+      // The running sync releases with A's token: nothing is written, and it is told to go again.
+      expect(await scalar(client, releaseSql, [id, "token-of-a", true, running.claimed_at])).toBe(true);
+      expect(await row()).toEqual({ sync_token: null, sync_claimed_at: null, sync_again: true });
+      expect(await scalar(client, claimSql, [id])).toMatchObject({ sync_token: null, primary_calendar_id: "other-primary@example.com" });
     }));
 });
 

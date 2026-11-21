@@ -75,7 +75,7 @@ const release = () => state.calls.filter((c) => c[0] === "calendar_sync_release"
 const actions = () => state.calls.filter((c) => !["list", "calendar_sync_release"].includes(c[0] as string));
 
 beforeEach(() => {
-  state.claims = [{ sync_token: "old", primary_calendar_id: "host@example.com" }];
+  state.claims = [{ sync_token: "old", primary_calendar_id: "host@example.com", claimed_at: "2030-01-02T08:00:00.123456+00:00" }];
   state.again = [];
   state.pages = [];
   state.rows = [row()];
@@ -93,7 +93,7 @@ describe("syncCalendar", () => {
       ["plan", "b1"],
       ["moveMail", "b1", { startsAt: new Date(start), endsAt: new Date(end) }],
     ]);
-    expect(release()).toEqual([{ p_user_id: user, p_sync_token: "next-1", p_save_token: true }]);
+    expect(release()).toEqual([{ p_user_id: user, p_claimed_at: "2030-01-02T08:00:00.123456+00:00", p_sync_token: "next-1", p_save_token: true }]);
   });
 
   it("guest declined: cancelled by the invitee, event removed, both sides told", async () => {
@@ -148,7 +148,7 @@ describe("syncCalendar", () => {
     state.pages = [[event({ start: { dateTime: "2030-01-05T09:30:00Z" } }), { id: "ev2", status: "cancelled" }]];
     expect(await sync()).toBe("synced");
     expect(actions().map((c) => c[0])).toEqual(["calendar_booking_deleted", "cancelMails"]);
-    expect(release()).toEqual([{ p_user_id: user, p_sync_token: "next-1", p_save_token: false }]);
+    expect(release()).toEqual([{ p_user_id: user, p_claimed_at: "2030-01-02T08:00:00.123456+00:00", p_sync_token: "next-1", p_save_token: false }]);
   });
 
   it("a failing event stops neither the others nor the token", async () => {
@@ -176,7 +176,7 @@ describe("syncCalendar", () => {
     state.pages = [new GoogleError("UNAVAILABLE", 503)];
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await sync()).toBe("failed");
-    expect(release()).toEqual([{ p_user_id: user, p_sync_token: null, p_save_token: false }]);
+    expect(release()).toEqual([{ p_user_id: user, p_claimed_at: "2030-01-02T08:00:00.123456+00:00", p_sync_token: null, p_save_token: false }]);
   });
 
   it("busy when another sync runs; goes again when a notification came in meanwhile", async () => {

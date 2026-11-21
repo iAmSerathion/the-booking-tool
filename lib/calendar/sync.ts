@@ -41,7 +41,7 @@ export async function syncCalendar(userId: string, { now = () => new Date() }: {
     if (error) throw error;
     // Another sync runs; claim told it to go again afterwards.
     if (!claim) return round === 0 ? "busy" : "synced";
-    const { sync_token: syncToken, primary_calendar_id: calendarId } = claim as { sync_token: string | null; primary_calendar_id: string | null };
+    const { sync_token: syncToken, primary_calendar_id: calendarId, claimed_at: claimedAt } = claim as { sync_token: string | null; primary_calendar_id: string | null; claimed_at: string };
 
     let nextToken: string | null = null;
     let deferred = false;
@@ -63,9 +63,11 @@ export async function syncCalendar(userId: string, { now = () => new Date() }: {
       console.error("calendar sync", userId, cause);
       outcome = "failed";
     }
-    // A deferred event keeps the old token, so the same change comes back next time.
+    // A deferred event keeps the old token, so the same change comes back next time. The claim id makes release a no-op
+    // (and go again) when the host switched calendar accounts meanwhile, so the old calendar's token is never stored.
     const { data: again } = await db.rpc("calendar_sync_release", {
       p_user_id: userId,
+      p_claimed_at: claimedAt,
       p_sync_token: nextToken,
       p_save_token: outcome === "synced" && !deferred && nextToken !== null,
     });
