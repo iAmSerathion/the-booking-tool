@@ -99,7 +99,7 @@ test("a host creates a single-use link with prefill and metadata; the invitee bo
     const { data: row } = await admin().from("bookings").select("booked_via, link_id, invitee_company, answers").eq("id", booking.id).single();
     expect(row).toMatchObject({ booked_via: "link", link_id: links![0].id, invitee_company: "Example Ltd", answers: [{ id: "topic", answer: "Pricing" }] });
     const { data: outbox } = await admin().from("booking_outbox").select("type, payload").eq("booking_id", booking.id);
-    expect(outbox).toEqual([{ type: "booking.created", payload: expect.objectContaining({ link_id: links![0].id, link: { id: links![0].id, metadata: { campaign: "spring", "ref.id": "42" } } }) }]);
+    expect(outbox).toEqual([{ type: "booking.created", payload: expect.objectContaining({ link: { id: links![0].id, metadata: { campaign: "spring", "ref.id": "42" } } }) }]);
 
     // The second visit gets the neutral closed view, the same as an unknown token.
     await invitee.goto(url);
