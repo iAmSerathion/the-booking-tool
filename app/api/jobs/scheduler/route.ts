@@ -1,15 +1,20 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { calendarUpkeep } from "@/lib/calendar/upkeep";
 import { getConfig } from "@/lib/config";
+import { dispatchOutbox } from "@/lib/events/dispatcher";
 import { runJobs } from "@/lib/jobs/scheduler";
 import { retryDueMails } from "@/lib/mail/send";
 
 // The scheduler: pg_cron (supabase/optional/scheduler_cron.sql) or any external cron POSTs here every minute with
-// "Authorization: Bearer <SCHEDULER_SECRET>". Steps run in order, each isolated: due jobs, mail retries, calendar upkeep.
+// "Authorization: Bearer <SCHEDULER_SECRET>". Steps run in order, each isolated: due jobs, mail retries, calendar upkeep, webhooks (outbox).
 //
 // Test clock (SCHEDULER_TEST_CLOCK=true, which config allows only with a loopback APP_URL): x-test-now sets the clock and
-// needs a scope, x-test-booking (jobs and mail retries of that booking) or x-test-user (calendar upkeep of that member);
+// needs a scope, x-test-booking (jobs, mail retries and webhooks of that booking) or x-test-user (calendar upkeep of that member);
 // steps without their scope are skipped (null). Without the flag the headers are ignored and a normal run happens.
+
+// Webhooks stop starting new POSTs after 40 s (dispatchOutbox budgetMs); this caps the whole run on platforms that honour it.
+// A run cut off mid-POST loses nothing: the row is retried after its lease, without using an attempt.
+export const maxDuration = 60;
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Digests are always 32 bytes, so the compare is constant-time and leaks no length.
@@ -53,6 +58,6 @@ export async function POST(request: Request) {
   const jobs = forBooking ? await step("jobs", () => runJobs({ now: c.now, onlyBooking: c.onlyBooking })) : null;
   const mails = forBooking ? await step("mails", () => retryDueMails({ now: c.now, onlyBooking: c.onlyBooking })) : null;
   const calendar = !c.scoped || c.onlyUser !== null ? await step("calendar", () => calendarUpkeep({ now: c.now, onlyUser: c.onlyUser })) : null;
-  // M9: dispatch the outbox here (unscoped runs only).
-  return Response.json({ jobs, mails, calendar });
+  const webhooks = forBooking ? await step("webhooks", () => dispatchOutbox({ now: c.now, onlyBooking: c.onlyBooking })) : null;
+  return Response.json({ jobs, mails, calendar, webhooks });
 }
