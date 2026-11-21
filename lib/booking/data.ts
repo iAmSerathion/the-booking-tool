@@ -2,22 +2,35 @@ import { loadAvailability, loadOffer } from "@/lib/availability/data";
 import { freeSlots, withoutBooking } from "@/lib/core/availability";
 import { linkPrefill, linkStatus, type Prefill } from "@/lib/core/links";
 import type { Question } from "@/lib/core/questions";
+import type { WidgetView } from "@/lib/core/widget";
 import { createAdminSupabase } from "@/lib/db/admin";
+import { loadWidget } from "@/lib/widget/data";
 import { hashToken, plausibleToken } from "./token";
 
 // What the public booking pages and the booking action read: who can be booked, for which event type, the free times,
 // and the confirmation behind a token. Service role, server code only; never send host ids to the browser.
 
 // Where a booking comes from: the general page "/" (website default) or a member's page "/<slug>". eventType: an
-// active event type's slug instead of the default one. A booking link "/l/<token>" fixes host and event type. M6 adds
-// widgets.
-export type ChannelRef = { kind: "page"; eventType?: string } | { kind: "person"; slug: string; eventType?: string } | { kind: "link"; token: string };
+// active event type's slug instead of the default one. A booking link "/l/<token>" fixes host and event type. A widget
+// "/widget/<id>[/section]" fixes the event type and its hosts.
+export type ChannelRef =
+  | { kind: "page"; eventType?: string }
+  | { kind: "person"; slug: string; eventType?: string }
+  | { kind: "link"; token: string }
+  | { kind: "widget"; id: string; view: WidgetView };
 
 export type BookingHost = { id: string; name: string; meetAuto: boolean };
 export type BookingEventType = { id: string; slug: string; title: string; description: string | null; durationMinutes: number; questions: Question[] };
 // Links only: linkId (server side, passed to create_booking) and the cleaned prefill. The link's metadata never leaves
-// the database.
-export type BookingContext = { via: "page" | "person_link" | "link"; hosts: BookingHost[]; eventType: BookingEventType; linkId?: string; prefill?: Prefill };
+// the database. Widgets only: widgetId.
+export type BookingContext = {
+  via: "page" | "person_link" | "link" | "widget";
+  hosts: BookingHost[];
+  eventType: BookingEventType;
+  linkId?: string;
+  prefill?: Prefill;
+  widgetId?: string;
+};
 // What the browser gets per free time.
 export type PublicSlot = { start: string; end: string };
 
@@ -29,6 +42,7 @@ const settingString = (value: unknown) => (typeof value === "string" ? value : n
 // type. The general page with nobody bookable still exists; it just has no hosts and so no free times.
 export async function loadContext(ref: ChannelRef): Promise<BookingContext | null> {
   if (ref.kind === "link") return loadLinkContext(ref.token);
+  if (ref.kind === "widget") return loadWidgetContext(ref.id);
   if (ref.kind === "person" && !slugPattern.test(ref.slug)) return null;
   if (ref.eventType !== undefined && !slugPattern.test(ref.eventType)) return null;
   const db = createAdminSupabase();
@@ -96,6 +110,37 @@ async function loadLinkContext(token: string): Promise<BookingContext | null> {
     linkId: link.id,
     prefill: linkPrefill(link.prefill, eventType.questions),
   };
+}
+
+// A widget: null when it is unknown or inactive, its event type is switched off, or none of its hosts can be booked any
+// more. Person mode books its one host, round robin all of them. No fallback to everyone: save_booking_widget and
+// deactivation keep the hosts valid, and a widget without hosts shows the closed view.
+async function loadWidgetContext(id: string): Promise<BookingContext | null> {
+  const widget = await loadWidget(id);
+  if (!widget?.active) return null;
+  const db = createAdminSupabase();
+  const [type, members] = await Promise.all([
+    db.from("event_types").select(eventTypeColumns).eq("id", widget.event_type_id).eq("active", true).maybeSingle(),
+    db.from("booking_widget_hosts").select("user_id").eq("widget_id", widget.id),
+  ]);
+  if (type.error) throw type.error;
+  if (members.error) throw members.error;
+  if (!type.data) return null;
+  const { data: people, error } = await db
+    .from("profiles")
+    .select("id, name, meet_auto")
+    .in(
+      "id",
+      members.data.map((m) => m.user_id),
+    )
+    .eq("active", true)
+    .eq("bookable", true)
+    .order("name")
+    .order("id");
+  if (error) throw error;
+  const hosts = people.map((p) => ({ id: p.id, name: p.name, meetAuto: p.meet_auto })).slice(0, widget.mode === "person" ? 1 : undefined);
+  if (hosts.length === 0) return null;
+  return { via: "widget", hosts, eventType: toEventType(type.data), widgetId: widget.id };
 }
 
 export const publicSlots = (slots: readonly PublicSlot[]): PublicSlot[] => slots.map(({ start, end }) => ({ start, end }));

@@ -224,6 +224,7 @@ describe("bookSlot", () => {
       token_hash: hashToken(token),
       check_upcoming: true,
       link_id: null,
+      widget_id: null,
     });
     expect(called("updateTag")[0][1]).toBe("google-busy-h2");
   });
@@ -237,6 +238,24 @@ describe("bookSlot", () => {
   it("answers a link that closed after the page loaded with linkInvalid, before any hold", async () => {
     state.context = null;
     expect(await bookSlot({ kind: "link", token: "a".repeat(43) }, form())).toEqual({ ok: false, error: "booking.error.linkInvalid" });
+    expect(names()).toEqual(["limit"]);
+  });
+
+  it("books through a widget with the widget id from the server-side context and stays inside the frame", async () => {
+    const id = "00000000-0000-4000-8000-000000000201";
+    state.context = { ...context, via: "widget", widgetId: id };
+    for (const view of ["window", "section"] as const) {
+      state.calls = [];
+      await expect(bookSlot({ kind: "widget", id, view }, form({ widget_id: "forged", widgetId: "forged" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booked_via: "widget", widget_id: id, link_id: null } });
+      const path = view === "section" ? `/widget/${id}/section` : `/widget/${id}`;
+      expect(called("redirect")[0][1]).toMatch(new RegExp(`^${path}/confirmed/[A-Za-z0-9_-]{43}\\?new=1$`));
+    }
+  });
+
+  it("answers a widget switched off after the page loaded with widgetClosed, before any hold", async () => {
+    state.context = null;
+    expect(await bookSlot({ kind: "widget", id: "00000000-0000-4000-8000-000000000201", view: "window" }, form())).toEqual({ ok: false, error: "booking.error.widgetClosed" });
     expect(names()).toEqual(["limit"]);
   });
 
