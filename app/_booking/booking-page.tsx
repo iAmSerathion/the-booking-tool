@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { bookSlot } from "@/lib/booking/actions";
 import { type ChannelRef, loadBookingPage } from "@/lib/booking/data";
 import { getConfig } from "@/lib/config";
+import { t } from "@/lib/i18n";
+import styles from "./booking.module.css";
 import { Booking } from "./booking";
 import { Frame } from "./frame";
 import { LinkClosed } from "./link-closed";
@@ -37,6 +39,20 @@ export async function BookingPage({ channel }: { channel: ChannelRef }) {
     </Frame>
   ) : (
     <Frame>
+      {context.eventTypes && context.eventTypes.length > 1 && (
+        // Plain links: the event type is part of the page's URL, so the action bound above books exactly this one.
+        <nav aria-label={t(config.locale, "booking.eventTypes")} className={styles.types}>
+          <ul>
+            {context.eventTypes.map((type) => (
+              <li key={type.slug}>
+                <a href={`?type=${type.slug}`} aria-current={type.slug === context.eventType.slug ? "page" : undefined}>
+                  {type.title} <span>{t(config.locale, "booking.minutes", { minutes: type.durationMinutes })}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
       <Booking {...props} prefill={context.prefill} />
     </Frame>
   );

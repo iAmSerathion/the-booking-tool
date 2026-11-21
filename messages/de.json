@@ -22,6 +22,7 @@
   "notFound.body": "Diese Seite gibt es nicht oder der Link gilt nicht mehr.",
   "frame.imprint": "Impressum",
   "booking.minutes": "{minutes} Minuten",
+  "booking.eventTypes": "Terminarten",
   "booking.meet": "Google Meet",
   "booking.with": "mit {name}",
   "booking.chooseTime": "Zeit wählen",
