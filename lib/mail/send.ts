@@ -26,7 +26,8 @@ export type SendResult = "sent" | "duplicate" | "expired" | "retry" | "failed";
 
 // Minutes to wait after the 1st, 2nd, ... failed attempt; after the last one the mail is failed.
 export const retryDelayMinutes = [1, 5, 30, 120, 360];
-// While an attempt runs, the row is leased this long, so a scheduler run does not grab it at the same time.
+// While an attempt runs, the row is leased this long, so a scheduler run does not grab it at the same time. A retry
+// takes the lease again right before its attempt (retryOne), so a slow batch cannot outlive the claim's lease.
 export const attemptLeaseMinutes = 2;
 
 // When to try again after `attempts` failed attempts, or null to give up (attempts used up, or past send_until).
@@ -38,6 +39,7 @@ export function nextAttempt(attempts: number, now: Date, sendUntil: Date | null)
 }
 
 type Row = { id: string; to: string[]; reply_to: string | null; subject: string; body_text: string; body_html: string | null; attempts: number; send_until: string | null };
+type ClaimedRow = Row & { next_attempt_at: string };
 
 export async function sendMail(mail: OutgoingMail): Promise<SendResult> {
   const now = new Date();
@@ -106,6 +108,29 @@ export async function retryDueMails({ now = new Date(), onlyBooking = null }: { 
   });
   if (error) throw error;
   const counts = { sent: 0, retry: 0, failed: 0 };
-  for (const row of data as Row[]) counts[await attempt(row)]++;
+  for (const row of data as ClaimedRow[]) {
+    const result = await retryOne(row);
+    if (result !== "skipped") counts[result]++;
+  }
   return counts;
+}
+
+// A claimed row is sent only if it is still pending, still carries the lease this run's claim gave it (no other run took
+// it after that lease ran out while this batch was busy) and is not past send_until; the conditional update renews the
+// lease for this attempt. Skipped otherwise: whoever holds it now sends it, claim_mail_retries fails an expired one.
+async function retryOne(row: ClaimedRow): Promise<"sent" | "retry" | "failed" | "skipped"> {
+  const now = new Date();
+  if (row.send_until && new Date(row.send_until) <= now) return "skipped";
+  const { data, error } = await createAdminSupabase()
+    .from("outbound_mails")
+    .update({ next_attempt_at: new Date(now.getTime() + attemptLeaseMinutes * 60_000).toISOString() })
+    .eq("id", row.id)
+    .eq("state", "pending")
+    .eq("next_attempt_at", row.next_attempt_at)
+    .select("id");
+  if (error) {
+    console.error("mail: lease", row.id, error);
+    return "skipped";
+  }
+  return data.length ? attempt(row) : "skipped";
 }
