@@ -37,6 +37,7 @@ export const optionalEnvKeys = [
   "WEBHOOK_URL",
   "WEBHOOK_SECRET",
   "EMBED_ALLOWED_ORIGINS",
+  "SCHEDULER_TEST_CLOCK",
 ] as const;
 
 export type Config = {
@@ -53,6 +54,8 @@ export type Config = {
   };
   initialAdminEmail: string | null;
   schedulerSecret: string;
+  // Test only: the scheduler honours x-test-now (scoped to one booking or user). Always with a loopback APP_URL.
+  schedulerTestClock: boolean;
   mail: { smtpUrl: string; from: string };
   brand: { name: string; logoUrl: string | null; privacyUrl: string | null; imprintUrl: string | null };
   locale: Locale;
@@ -150,6 +153,13 @@ export function parseConfig(env: Env): Config {
     problems.push("GOOGLE_FAKE_URL is for tests only and must point at localhost or 127.0.0.1");
   }
 
+  // A simulated clock lets a caller with the secret send reminders early, so it must never run in a deployment.
+  const testClock = get("SCHEDULER_TEST_CLOCK") ?? "false";
+  if (!["true", "false"].includes(testClock)) problems.push("SCHEDULER_TEST_CLOCK must be true or false");
+  if (testClock === "true" && appUrl && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(appUrl).hostname)) {
+    problems.push("SCHEDULER_TEST_CLOCK is for tests only and needs a loopback APP_URL (localhost, 127.0.0.1 or [::1])");
+  }
+
   const webhookSecret = get("WEBHOOK_SECRET");
   if (get("WEBHOOK_URL") && !webhookSecret) problems.push("WEBHOOK_SECRET is required when WEBHOOK_URL is set");
   if (webhookSecret && webhookSecret.length < 32) problems.push("WEBHOOK_SECRET must be at least 32 characters");
@@ -180,6 +190,7 @@ export function parseConfig(env: Env): Config {
     },
     initialAdminEmail,
     schedulerSecret,
+    schedulerTestClock: testClock === "true",
     mail: { smtpUrl: smtpUrl!, from: get("MAIL_FROM")! },
     brand: { name: readBrandName(env), logoUrl, privacyUrl, imprintUrl },
     locale: readLocale(env),

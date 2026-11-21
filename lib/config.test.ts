@@ -161,3 +161,23 @@ describe("layout helpers", () => {
     expect(readBrandName({ BRAND_NAME: "Acme Bookings" })).toBe("Acme Bookings");
   });
 });
+
+describe("scheduler test clock", () => {
+  it("is off by default", () => {
+    expect(parseConfig(valid).schedulerTestClock).toBe(false);
+  });
+
+  it.each(["http://127.0.0.1:3100", "http://localhost:3100", "http://[::1]:3100"])("is allowed with a loopback APP_URL: %s", (APP_URL) => {
+    expect(parseConfig({ ...valid, APP_URL, SCHEDULER_TEST_CLOCK: "true" }).schedulerTestClock).toBe(true);
+  });
+
+  it.each(["https://booking.example.com", "http://127.0.0.1.example.com", "http://10.0.0.5:3100"])("is refused with any other APP_URL: %s", (APP_URL) => {
+    expect(problems({ ...valid, APP_URL, SCHEDULER_TEST_CLOCK: "true" })).toEqual([
+      "SCHEDULER_TEST_CLOCK is for tests only and needs a loopback APP_URL (localhost, 127.0.0.1 or [::1])",
+    ]);
+  });
+
+  it("must be true or false", () => {
+    expect(problems({ ...valid, SCHEDULER_TEST_CLOCK: "1" })).toEqual(["SCHEDULER_TEST_CLOCK must be true or false"]);
+  });
+});
