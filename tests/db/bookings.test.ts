@@ -510,7 +510,7 @@ describe("create_booking and the event type", () => {
       await client.query("update public.event_types set active = false where id = $1", [eventType]);
       await actAs(client, "service_role");
       const error = await sqlError(client, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30) })]);
-      expect(error.code).toBe("P0002");
+      expect(error.code).toBe("P0006");
       expect(error.message).toMatch(/event type/);
       expect(await scalar(client, "select count(*)::int from public.slot_holds where id = $1", [holdId])).toBe(1);
       expect(await scalar(client, "select count(*)::int from public.bookings where host_id = $1", [host])).toBe(0);
@@ -537,7 +537,7 @@ describe("create_booking and the event type", () => {
         .poll(() => scalar<boolean>(setup, "select wait_event_type = 'Lock' from pg_stat_activity where pid = $1", [pidB]), { timeout: 5_000 })
         .toBe(true);
       await a.query("commit");
-      expect((await booking).code).toBe("P0002");
+      expect((await booking).code).toBe("P0006");
       await b.query("rollback");
     } finally {
       await a.query("rollback").catch(() => {});

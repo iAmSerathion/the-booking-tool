@@ -157,7 +157,7 @@ begin
   -- The event type must still be on. FOR SHARE waits for a concurrent set_event_type_active (row update) and re-reads it.
   perform 1 from public.event_types et where et.id = v_event_type and et.active for share;
   if not found then
-    raise exception 'This event type is no longer open for booking.' using errcode = 'P0002';
+    raise exception 'This event type is no longer open for booking.' using errcode = 'P0006';
   end if;
   -- The hold must still exist under the host lock and match the booked time.
   delete from public.slot_holds
