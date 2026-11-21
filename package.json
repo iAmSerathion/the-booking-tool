@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3000",
     "dev:calendar": "node scripts/dev-calendar.mjs",
+    "dev:login": "node scripts/dev-login.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
