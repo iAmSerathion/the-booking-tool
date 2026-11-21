@@ -86,6 +86,16 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 - Bookings in the admin lists upcoming bookings (members their own, admins all) with the invitee's answers and the link
   metadata, in the viewer's time zone. Cancelling there removes the Google event with an update to the guest.
 
+## Widgets
+
+- Admins create widgets under Widgets in the admin: name, event type, one person or round robin over chosen members,
+  and the sites (origins) allowed to embed it. Each widget shows a window and a section snippet built from `APP_URL`;
+  Playground (admins, or any member under `next dev`) tries a widget with a prefill. How to embed: [docs/embedding.md](docs/embedding.md).
+- Widget pages (`/widget/<id>`) send `frame-ancestors` with the widget's allowed sites (or `EMBED_ALLOWED_ORIGINS` when it
+  has none) plus `APP_URL`, read per request; switched-off and unknown widgets get `'none'`. Every other page keeps
+  `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
+  the widget and the host page they came from.
+
 ## Checks
 
 ```bash
