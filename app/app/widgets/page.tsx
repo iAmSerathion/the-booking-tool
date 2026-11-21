@@ -86,6 +86,8 @@ export default async function WidgetsPage() {
 // The fields of the new and the edit form; prefix keeps the label ids unique on the page.
 function WidgetFields({ prefix, options, widget }: { prefix: string; options: LinkFormOptions; widget?: WidgetListItem }) {
   const hosts = new Set(widget?.hosts.map((h) => h.id));
+  // A switched-off event type is not among the options; without this the select would quietly post the first one.
+  const typeOff = widget && !options.eventTypes.some((t) => t.id === widget.event_type_id);
   return (
     <>
       <div className={styles.field}>
@@ -94,7 +96,12 @@ function WidgetFields({ prefix, options, widget }: { prefix: string; options: Li
       </div>
       <div className={styles.field}>
         <label htmlFor={`${prefix}-event-type`}>Event type</label>
-        <select id={`${prefix}-event-type`} name="event_type_id" defaultValue={widget?.event_type_id}>
+        <select id={`${prefix}-event-type`} name="event_type_id" required defaultValue={typeOff ? "" : widget?.event_type_id}>
+          {typeOff && (
+            <option value="" disabled>
+              {widget.eventType} (switched off)
+            </option>
+          )}
           {options.eventTypes.map((t) => (
             <option key={t.id} value={t.id}>
               {t.title}
