@@ -11,6 +11,10 @@ import styles from "./booking.module.css";
 // Day and time picker in the invitee's zone, shared by the booking and the reschedule page.
 
 const noSubscribe = () => () => {};
+
+// False in the server render and during hydration. A form submit button stays disabled until then: a click before would
+// be a plain GET submit that reloads the page, drops the input and can put named fields in the URL.
+export const useHydrated = () => useSyncExternalStore(noSubscribe, () => true, () => false);
 const browserZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || "";
 
 // The browser's zone (the instance zone on the server and before hydration), until the invitee picks another.
@@ -44,7 +48,7 @@ export function SlotPicker({ locale, now, slots, timeZone, onTimeZone, start, on
 
   // The zone list and its Intl names depend on the browser's ICU data, which the server cannot know: until mounted (server
   // render and hydration) the select has only the current zone under its bare id, afterwards every zone with its name.
-  const mounted = useSyncExternalStore(noSubscribe, () => true, () => false);
+  const mounted = useHydrated();
   const zones = useMemo(() => {
     if (!mounted) return [timeZone];
     const all = Intl.supportedValuesOf("timeZone");
