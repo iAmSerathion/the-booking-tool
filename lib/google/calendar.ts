@@ -91,7 +91,8 @@ export async function listEvents(accessToken: string, calendarId: string, from: 
   return events;
 }
 
-// The private extended property that marks an event as a booking of this tool; the calendar sync (M8) reads it.
+// The private extended property that marks an event as a booking of this tool (listBookingEvents reads it). The calendar
+// sync never looks bookings up by it: another install sharing the calendar sets it too, so it matches by event id only.
 export const bookingIdProperty = "booking_id";
 
 export type NewEvent = {
