@@ -79,6 +79,7 @@
   "link.closed": "This link can no longer be used",
   "link.closedBody": "It may have been used already, expired or been withdrawn. Please ask for a new link.",
   "booking.error.widgetClosed": "Booking here is not possible right now.",
+  "widget.close": "Close",
   "widget.title": "Book a time",
   "widget.closed": "Booking here is not possible right now",
   "widget.closedBody": "This booking form is switched off. Please try again later or get in touch another way."
