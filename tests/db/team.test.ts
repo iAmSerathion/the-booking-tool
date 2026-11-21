@@ -294,7 +294,7 @@ describe("deactivate_profile", () => {
           { id: cancelled, host_id: member, google_event_id: "old-evt", meet_url: "https://meet.example.com/old", guest_responses: { "ada@example.com": "accepted" } },
         ]);
         const outbox = await client.query(
-          "select booking_id, payload ->> 'host_id' as host, payload ->> 'previous_host_id' as previous from public.booking_outbox where type = 'booking.host_changed' order by booking_id",
+          "select booking_id, payload #>> '{host,id}' as host, payload ->> 'previous_host_id' as previous from public.booking_outbox where type = 'booking.host_changed' order by booking_id",
         );
         expect(outbox.rows).toEqual(
           [future, future2].sort().map((id) => ({ booking_id: id, host: successor, previous: member })),

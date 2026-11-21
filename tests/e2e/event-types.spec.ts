@@ -127,7 +127,7 @@ test("an admin creates an event type with questions; an invitee picks it, must a
     expect(booking).toMatchObject({ event_type_id: row!.id, answers });
     expect(new Date(booking!.ends_at).getTime() - new Date(booking!.starts_at).getTime()).toBe(60 * 60_000);
     const { data: outbox } = await admin().from("booking_outbox").select("type, payload").eq("booking_id", booking!.id);
-    expect(outbox).toEqual([{ type: "booking.created", payload: expect.objectContaining({ event_type_id: row!.id, answers }) }]);
+    expect(outbox).toEqual([{ type: "booking.created", payload: expect.objectContaining({ event_type: expect.objectContaining({ id: row!.id }), answers }) }]);
 
     // The admin Bookings list shows the answers.
     await page.goto("/app/bookings");
