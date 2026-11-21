@@ -19,7 +19,7 @@
   gap: 0.25rem;
 }
 
-.field input:not([type="checkbox"]),
+.field input:not([type="checkbox"]):not([type="radio"]),
 .field select {
   width: 100%;
   max-width: 24rem;
@@ -117,4 +117,44 @@
   .pairs {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.field textarea {
+  width: 100%;
+  max-width: 32rem;
+  box-sizing: border-box;
+  padding: 0.4rem;
+  font: inherit;
+}
+
+.card h3 {
+  margin: 0 0 0.5rem;
+}
+
+.card details {
+  margin-top: 0.75rem;
+}
+
+.card summary {
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+/* Widget snippets: wrap instead of scrolling sideways at phone width. */
+.snippet {
+  margin: 0.75rem 0 0;
+}
+
+.snippet pre {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.5rem;
+  background: #f4f4f4;
+  border-radius: 0.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Playground: room for the section before it loads. */
+.playgroundSection {
+  min-height: 12rem;
 }

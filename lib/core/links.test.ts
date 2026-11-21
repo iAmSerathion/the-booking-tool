@@ -26,6 +26,10 @@ describe("linkPrefill", () => {
     ).toEqual({ name: "Ada Example", email: "ada@example.com", timeZone: "Europe/Berlin", answers: { size: "11-50", notes: "hi" } });
   });
 
+  it("keeps a multi-line topic, as a widget's host page sends it", () => {
+    expect(linkPrefill({ topic: "  First line\r\n\r\n\r\nSecond  " }, questions)).toEqual({ topic: "First line\n\nSecond" });
+  });
+
   it("drops a bad zone, wrong choices and anything that is not an object", () => {
     expect(linkPrefill({ timezone: "Mars/Base", answers: { size: "huge" } }, questions)).toEqual({});
     expect(linkPrefill(["x"], questions)).toEqual({});

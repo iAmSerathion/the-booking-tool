@@ -1,3 +1,5 @@
+import { embedOriginPattern, maxEmbedOrigins } from "@/lib/core/widget";
+
 // Instance configuration from environment variables. Server-only: most values are secrets.
 // Read it with getConfig(); it throws once, listing every missing or invalid variable.
 
@@ -34,6 +36,7 @@ export const optionalEnvKeys = [
   "BOOKING_ATTEMPTS_PER_MINUTE",
   "WEBHOOK_URL",
   "WEBHOOK_SECRET",
+  "EMBED_ALLOWED_ORIGINS",
 ] as const;
 
 export type Config = {
@@ -57,6 +60,8 @@ export type Config = {
   trustProxyHeaders: boolean;
   bookingAttemptsPerMinute: number;
   webhook: { url: string; secret: string } | null;
+  // Origins that may embed widgets which list no origins of their own.
+  embedAllowedOrigins: string[];
 };
 
 export class ConfigError extends Error {
@@ -149,6 +154,14 @@ export function parseConfig(env: Env): Config {
   if (get("WEBHOOK_URL") && !webhookSecret) problems.push("WEBHOOK_SECRET is required when WEBHOOK_URL is set");
   if (webhookSecret && webhookSecret.length < 32) problems.push("WEBHOOK_SECRET must be at least 32 characters");
 
+  const embedAllowedOrigins = (get("EMBED_ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((o) => o.trim().toLowerCase().replace(/\/+$/, ""))
+    .filter(Boolean);
+  if (embedAllowedOrigins.length > maxEmbedOrigins || !embedAllowedOrigins.every((o) => embedOriginPattern.test(o))) {
+    problems.push(`EMBED_ALLOWED_ORIGINS must be at most ${maxEmbedOrigins} comma-separated origins like https://www.example.com (plain http only for localhost or 127.0.0.1)`);
+  }
+
   if (problems.length) throw new ConfigError(problems);
 
   return {
@@ -174,6 +187,7 @@ export function parseConfig(env: Env): Config {
     trustProxyHeaders: trustProxy === "true",
     bookingAttemptsPerMinute: attempts,
     webhook: webhookUrl && webhookSecret ? { url: webhookUrl, secret: webhookSecret } : null,
+    embedAllowedOrigins: [...new Set(embedAllowedOrigins)],
   };
 }
 

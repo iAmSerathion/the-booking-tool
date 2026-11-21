@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // Host pages load the widget loader on every visit; a short cache lets fixes reach them within minutes.
+        source: "/widget.js",
+        headers: [{ key: "Cache-Control", value: "public, max-age=300" }],
+      },
+      {
         // No page may be framed, except the widget pages; their frame-ancestors are set per widget at request time.
         source: "/:path((?!widget/).*)",
         headers: [

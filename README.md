@@ -86,6 +86,16 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 - Bookings in the admin lists upcoming bookings (members their own, admins all) with the invitee's answers and the link
   metadata, in the viewer's time zone. Cancelling there removes the Google event with an update to the guest.
 
+## Widgets
+
+- Admins create widgets under Widgets in the admin: name, event type, one person or round robin over chosen members,
+  and the sites (origins) allowed to embed it. Each widget shows a window and a section snippet built from `APP_URL`;
+  Playground (admins, or any member under `next dev`) tries a widget with a prefill. How to embed: [docs/embedding.md](docs/embedding.md).
+- Widget pages (`/widget/<id>`) send `frame-ancestors` with the widget's allowed sites (or `EMBED_ALLOWED_ORIGINS` when it
+  has none) plus `APP_URL`, read per request; switched-off and unknown widgets get `'none'`. Every other page keeps
+  `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
+  the widget and the host page they came from.
+
 ## Checks
 
 ```bash
@@ -98,8 +108,10 @@ npm run test:db     # database tests against it
 npm run db:lint     # plpgsql_check on the local test database (CI: supabase db lint)
 ```
 
-The e2e tests start two servers: the production build on `127.0.0.1:3100` and a Google fake on `127.0.0.1:3999`
-(`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host). The
+The e2e tests start three servers: the production build on `127.0.0.1:3100`, a Google fake on `127.0.0.1:3999`
+(`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host) and a
+widget host page (`tests/e2e/embed-site.mjs`, test-only) on `127.0.0.1:3101` as the allowed origin and `127.0.0.1:3102`
+as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two ports. The
 fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
 move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
