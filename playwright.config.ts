@@ -71,6 +71,8 @@ export default defineConfig({
         GOOGLE_CLIENT_SECRET: "fake-secret",
         SMTP_URL: `smtp://127.0.0.1:${smtpPort}`,
         MAIL_FROM: "Bookings <bookings@example.com>",
+        // Lets tests run the scheduler at a simulated time (x-test-now), scoped to their own booking or member.
+        SCHEDULER_TEST_CLOCK: "true",
       },
     },
   ],
