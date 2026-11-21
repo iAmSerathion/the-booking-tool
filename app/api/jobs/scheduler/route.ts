@@ -10,8 +10,6 @@ import { retryDueMails } from "@/lib/mail/send";
 // needs a scope, x-test-booking (jobs and mail retries of that booking) or x-test-user (calendar upkeep of that member);
 // steps without their scope are skipped (null). Without the flag the headers are ignored and a normal run happens.
 
-export const dynamic = "force-dynamic";
-
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Digests are always 32 bytes, so the compare is constant-time and leaks no length.
 const digest = (value: string) => createHash("sha256").update(value).digest();
