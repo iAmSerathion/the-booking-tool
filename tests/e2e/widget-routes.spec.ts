@@ -3,6 +3,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { bookingsOf, fillDetails, newHost, newPage, nextDay, noSideScroll, openDay, removeHost, zone } from "./booking-helpers";
 import { baseURL, embedOrigin } from "./env";
 import { admin } from "./session";
+import { discoveryCall, newWidget, removeWidget } from "./widget-helpers";
 
 // Widget pages opened directly (the embedding itself is in widget.spec.ts): the per-request frame-ancestors from the
 // widget row, the closed view, and booking through a widget. Every test creates its own hosts and widget; the seeded
@@ -10,25 +11,9 @@ import { admin } from "./session";
 
 test.use({ timezoneId: zone, locale: "en-US" });
 
-const discoveryCall = "00000000-0000-4000-8000-000000000101";
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 const closed = "Booking here is not possible right now";
 
-async function newWidget(hostIds: string[], { mode = "round_robin", active = true, origins = [embedOrigin] } = {}) {
-  const { data, error } = await admin()
-    .from("booking_widgets")
-    .insert({ name: `Widget ${randomUUID().slice(0, 8)}`, mode, event_type_id: discoveryCall, allowed_origins: origins, active })
-    .select("id")
-    .single();
-  if (error) throw error;
-  if (hostIds.length) {
-    const { error: hostError } = await admin().from("booking_widget_hosts").insert(hostIds.map((user_id) => ({ widget_id: data.id, user_id })));
-    if (hostError) throw hostError;
-  }
-  return data.id as string;
-}
-// Bookings keep the row (widget_id is ON DELETE SET NULL); the hosts go with removeHost afterwards.
-const removeWidget = (id: string) => admin().from("booking_widgets").delete().eq("id", id);
 
 async function book(page: Page, path: string, day: string, time: string) {
   await page.goto(path);
