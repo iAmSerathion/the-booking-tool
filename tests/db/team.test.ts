@@ -367,8 +367,8 @@ describe("deactivate_profile", () => {
 });
 
 describe("last admin under concurrency", () => {
-  // Two admins act on each other at the same time. The second call passes its admin check, then waits on the
-  // 'team:admins' lock and must fail once the first commits; without the lock both could pass and leave no admin.
+  // Two admins act on each other at the same time. The second call waits on the 'team:admins' lock and must fail once
+  // the first commits (its admin is gone: 42501); without the lock both could pass and leave no admin.
   async function race(call: (self: string, other: string) => [string, unknown[]], role: "authenticated" | "service_role") {
     const setup = await pool.connect();
     const a = await pool.connect();
@@ -400,7 +400,7 @@ describe("last admin under concurrency", () => {
       expect(waiting).toBe(true);
 
       await a.query("commit");
-      expect(await second).toBe("P0002");
+      expect(await second).toBe("42501");
       await b.query("rollback");
       expect(await scalar(setup, "select count(*)::int from public.profiles where id = any($1) and active and is_admin", [ids])).toBe(1);
     } finally {
@@ -416,6 +416,66 @@ describe("last admin under concurrency", () => {
 
   it("lets only one of two mutual deactivations through", () =>
     race((self, other) => [deactivateSql, [other, self, self, plan()]], "service_role"));
+});
+
+describe("admin check under the team lock", () => {
+  // Admins A, B and C. A's call runs first and stays uncommitted; B's call waits on the 'team:admins' lock. A commits,
+  // B was demoted or deactivated by it, and B's request must now be refused as not-admin (42501): the admin check
+  // has to run after the lock, not before it.
+  async function demotedWhileWaiting(
+    first: (a: string, b: string, c: string) => [string, unknown[]],
+    second: (a: string, b: string, c: string) => [string, unknown[]],
+    role: "authenticated" | "service_role",
+  ) {
+    const setup = await pool.connect();
+    const a = await pool.connect();
+    const b = await pool.connect();
+    const ids: string[] = [];
+    try {
+      for (const name of ["lock-a", "lock-b", "lock-c"]) ids.push(await addProfile(setup, `${name}@example.com`, { isAdmin: true }));
+      const [ida, idb, idc] = ids;
+      await a.query("begin");
+      await actAs(a, role, ida);
+      await a.query(...first(ida, idb, idc));
+
+      await b.query("begin");
+      await actAs(b, role, idb);
+      const pidB = await scalar<number>(b, "select pg_backend_pid()");
+      const waiting = sqlError(b, ...second(ida, idb, idc));
+      await expect
+        .poll(() => scalar<boolean>(setup, "select wait_event = 'advisory' from pg_stat_activity where pid = $1", [pidB]), { timeout: 5_000 })
+        .toBe(true);
+      await a.query("commit");
+      expect((await waiting).code).toBe("42501");
+      await b.query("rollback");
+    } finally {
+      await a.query("rollback").catch(() => {});
+      await b.query("rollback").catch(() => {});
+      for (const id of ids) await removeProfile(setup, id);
+      for (const c of [setup, a, b]) c.release();
+    }
+  }
+
+  it("refuses set_person_rights from an admin who was demoted while waiting", () =>
+    demotedWhileWaiting(
+      (_a, b) => [rightsSql, [b, '{"is_admin": false}']],
+      (_a, b) => [rightsSql, [b, '{"is_admin": true}']],
+      "authenticated",
+    ));
+
+  it("refuses the second of two mutual demotions among three admins", () =>
+    demotedWhileWaiting(
+      (_a, b) => [rightsSql, [b, '{"is_admin": false}']],
+      (a) => [rightsSql, [a, '{"is_admin": false}']],
+      "authenticated",
+    ));
+
+  it("refuses deactivate_profile from an actor who was deactivated while waiting", () =>
+    demotedWhileWaiting(
+      (a, b) => [deactivateSql, [b, a, a, plan()]],
+      (a, b) => [deactivateSql, [a, b, b, plan()]],
+      "service_role",
+    ));
 });
 
 const admitSql = "select public.admit_profile($1, $2)";
