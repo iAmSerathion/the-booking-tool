@@ -13,6 +13,7 @@ import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
+import { dropLease, takeLease } from "./lease";
 import { withinBookingLimit } from "./limit";
 
 // Reschedule and cancel without login, through the booking's token. The pages bind the token on the server; everything
@@ -22,27 +23,6 @@ import { withinBookingLimit } from "./limit";
 // Untyped on purpose: it comes straight from the browser.
 export type RescheduleForm = { start?: unknown; timeZone?: unknown };
 export type RescheduleResult = { ok: false; error: MessageKey; slots?: PublicSlot[] };
-
-// While google_change_until lies in the future, the calendar sync (M8) ignores Google changes to the booking, and a
-// second change of the same booking waits. hold_slot does not lock the booking itself: without this, two reschedules of
-// one booking could move the Google event in one order and commit in the other.
-const leaseSeconds = 120;
-
-async function takeLease(bookingId: string): Promise<boolean> {
-  const now = new Date();
-  const { data, error } = await createAdminSupabase()
-    .from("bookings")
-    .update({ google_change_until: new Date(now.getTime() + leaseSeconds * 1000).toISOString() })
-    .eq("id", bookingId)
-    .or(`google_change_until.is.null,google_change_until.lt.${now.toISOString()}`)
-    .select("id");
-  return !error && data.length === 1;
-}
-
-async function dropLease(bookingId: string) {
-  const { error } = await createAdminSupabase().from("bookings").update({ google_change_until: null }).eq("id", bookingId);
-  if (error) console.error("booking: lease release", error);
-}
 
 const isOpen = (booking: Confirmation | null): booking is Confirmation => !!booking && bookingChange(booking, new Date()) === "open";
 

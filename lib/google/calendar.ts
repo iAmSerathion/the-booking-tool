@@ -102,6 +102,10 @@ export type NewEvent = {
   timeZone: string;
   attendees: { email: string; displayName?: string }[];
   meet: boolean;
+  // Another event id than googleEventId(bookingId), for a booking that moves to another calendar: the invitee's calendar
+  // still holds the old event under the old id, and Google answers 409 in a calendar that ever held it. Also the Meet
+  // request id, so Google does not take it for a repeat of the old request.
+  eventId?: string;
 };
 
 type EventResponse = {
@@ -126,7 +130,7 @@ export async function createEvent(accessToken: string, calendarId: string, event
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({
-      id: googleEventId(event.bookingId),
+      id: event.eventId ?? googleEventId(event.bookingId),
       summary: event.summary,
       description: event.description,
       start: { dateTime: event.start.toISOString(), timeZone: event.timeZone },
@@ -135,7 +139,7 @@ export async function createEvent(accessToken: string, calendarId: string, event
       guestsCanModify: false,
       reminders: { useDefault: true },
       extendedProperties: { private: { [bookingIdProperty]: event.bookingId } },
-      ...(event.meet ? { conferenceData: { createRequest: { requestId: event.bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
+      ...(event.meet ? { conferenceData: { createRequest: { requestId: event.eventId ?? event.bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
     }),
     cache: "no-store",
   });
