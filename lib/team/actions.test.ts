@@ -30,7 +30,11 @@ vi.mock("@/lib/db/admin", () => ({
   }),
 }));
 
-const { inviteMember, reactivateMember, setMemberRight, setMemberSlug, setWebsiteBookings } = await import("./actions");
+vi.mock("./deactivate", () => ({
+  deactivate: async (args: unknown) => (state.calls.push(["deactivate", args]), { ok: true, message: "Ada is deactivated." }),
+}));
+
+const { deactivateMember, inviteMember, reactivateMember, setMemberRight, setMemberSlug, setWebsiteBookings } = await import("./actions");
 
 const id = "00000000-0000-4000-8000-000000000011";
 const form = (fields: Record<string, string>) => {
@@ -54,6 +58,7 @@ describe("team actions", () => {
     expect(await setMemberSlug(empty, form({ profile_id: id, slug: "ada" }))).toEqual(refused);
     expect(await inviteMember(empty, form(invite))).toEqual(refused);
     expect(await reactivateMember(empty, form({ profile_id: id }))).toEqual(refused);
+    expect(await deactivateMember(empty, form({ profile_id: id, to_id: id }))).toEqual(refused);
     expect(await setWebsiteBookings(empty, form({ mode: "round_robin" }))).toEqual(refused);
     expect(state.calls).toEqual([]);
   });
@@ -115,5 +120,12 @@ describe("team actions", () => {
       ["set_website_bookings", { p_mode: "round_robin", p_person_id: null }],
       ["reactivate_profile", { p_person_id: id }],
     ]);
+  });
+
+  it("deactivates with the signed-in admin as actor, never a form field", async () => {
+    const to = "00000000-0000-4000-8000-000000000022";
+    expect(await deactivateMember(empty, form({ profile_id: id, to_id: to, actor_id: to }))).toEqual({ ...ok, message: "Ada is deactivated." });
+    expect(state.calls).toEqual([["deactivate", { actorId: "actor", personId: id, toId: to }], ["refresh"]]);
+    expect(await deactivateMember(empty, form({ profile_id: id, to_id: "x" }))).toEqual({ error: "Choose who takes over.", saved: false });
   });
 });

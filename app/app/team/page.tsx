@@ -2,7 +2,7 @@ import { currentProfile } from "@/lib/auth/profile";
 import { getConfig } from "@/lib/config";
 import { bookingLink } from "@/lib/core/settings";
 import { slugMaxLength } from "@/lib/core/team";
-import { inviteMember, reactivateMember, setMemberRight, setMemberSlug, setWebsiteBookings } from "@/lib/team/actions";
+import { deactivateMember, inviteMember, reactivateMember, setMemberRight, setMemberSlug, setWebsiteBookings } from "@/lib/team/actions";
 import { loadTeam, type TeamMember, type WebsiteSetting } from "@/lib/team/data";
 import { ActionForm } from "../settings/action-form";
 import styles from "../settings/settings.module.css";
@@ -41,6 +41,10 @@ export default async function TeamPage() {
             <ActionForm action={inviteMember} submit="Invite">
               <InviteFields />
             </ActionForm>
+          </section>
+          <section aria-labelledby="deactivate-heading" className={styles.section}>
+            <h2 id="deactivate-heading">Deactivate a member</h2>
+            <DeactivateForm members={members.filter((m) => m.active)} meId={me.id} />
           </section>
           <section aria-labelledby="website-heading" className={styles.section}>
             <h2 id="website-heading">Website bookings</h2>
@@ -152,6 +156,47 @@ function InviteFields() {
         Usually turned on after they have connected their calendar.
       </p>
     </>
+  );
+}
+
+// One form for the page, not one per member: its result (what moved, what was left behind) stays visible after the
+// member's card turns into a deactivated one.
+function DeactivateForm({ members, meId }: { members: TeamMember[]; meId: string }) {
+  return (
+    <ActionForm action={deactivateMember} submit="Deactivate and hand over">
+      <p className={styles.hint} id="deactivate-hint">
+        Their upcoming bookings move to the successor&apos;s calendar: invitees get a new invitation and the old event is
+        cancelled. Widgets and website bookings move too. Their Google connection is removed and they can no longer sign
+        in. Reactivating them later gives nothing back.
+      </p>
+      <div className={styles.field}>
+        <label htmlFor="deactivate-member">Member</label>
+        <select id="deactivate-member" name="profile_id" required defaultValue="" aria-describedby="deactivate-hint">
+          <option value="">Choose a member</option>
+          {members
+            .filter((m) => m.id !== meId)
+            .map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+        </select>
+      </div>
+      <div className={styles.field}>
+        <label htmlFor="deactivate-to">Takes over</label>
+        <select id="deactivate-to" name="to_id" required defaultValue="" aria-describedby="deactivate-to-hint">
+          <option value="">Choose a member</option>
+          {members.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.bookable ? m.name : `${m.name} (not bookable)`}
+            </option>
+          ))}
+        </select>
+        <p id="deactivate-to-hint" className={styles.hint}>
+          Must be bookable with a connected calendar if there is anything to take over.
+        </p>
+      </div>
+    </ActionForm>
   );
 }
 

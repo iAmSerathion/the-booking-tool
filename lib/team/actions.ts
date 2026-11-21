@@ -7,8 +7,9 @@ import { cleanInvite, inviteError, slugError } from "@/lib/core/team";
 import { isWidgetId as isId } from "@/lib/core/widget";
 import { createAdminSupabase } from "@/lib/db/admin";
 import type { ActionState } from "@/lib/settings/actions";
+import { deactivate } from "./deactivate";
 
-// The team page: rights, link names, invites, reactivation and who gets website bookings. Admins only: checked here,
+// The team page: rights, link names, invites, deactivation, reactivation and who gets website bookings. Admins only: checked here,
 // and again in the database (assert_is_admin; invite_profile checks the actor, which comes from the session, never
 // from the form). The database also keeps at least one active admin.
 
@@ -89,6 +90,21 @@ export async function inviteMember(_state: ActionState, form: FormData): Promise
   }
   refresh();
   return { ...saved, message: `Invited. ${input.name} signs in at ${appUrl}/login with Google (${input.email}).` };
+}
+
+// Hands the member's future bookings, widgets and website bookings to a successor (see ./deactivate). The actor is the
+// signed-in admin, never a form field.
+export async function deactivateMember(_state: ActionState, form: FormData): Promise<ActionState> {
+  const { userId, isAdmin } = await signedIn();
+  if (!isAdmin) return failed(notAdmin);
+  const id = form.get("profile_id");
+  const to = form.get("to_id");
+  if (!isId(id)) return failed("Choose a member to deactivate.");
+  if (!isId(to)) return failed("Choose who takes over.");
+  const result = await deactivate({ actorId: userId, personId: id, toId: to });
+  if (!result.ok) return failed(result.error);
+  refresh();
+  return { ...saved, message: result.message };
 }
 
 export async function reactivateMember(_state: ActionState, form: FormData): Promise<ActionState> {
