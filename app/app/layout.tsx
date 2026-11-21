@@ -15,6 +15,7 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
         <nav aria-label="Main">
           <Link href="/app/bookings">Bookings</Link>
           <Link href="/app/links">Links</Link>
+          <Link href="/app/team">Team</Link>
           <Link href="/app/settings">Settings</Link>
           {me.is_admin && <Link href="/app/widgets">Widgets</Link>}
           {playgroundAllowed(me.is_admin) && <Link href="/app/playground">Playground</Link>}
