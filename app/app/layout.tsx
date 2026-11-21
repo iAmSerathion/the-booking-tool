@@ -2,6 +2,7 @@ import Link from "next/link";
 import { signOut } from "@/lib/auth/actions";
 import { currentProfile } from "@/lib/auth/profile";
 import { readBrandName } from "@/lib/config";
+import { playgroundAllowed } from "./playground/allowed";
 import styles from "./shell.module.css";
 
 // Admin shell. English only for now (plan section 3); customer-facing pages use lib/i18n.
@@ -15,6 +16,8 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
           <Link href="/app/bookings">Bookings</Link>
           <Link href="/app/links">Links</Link>
           <Link href="/app/settings">Settings</Link>
+          {me.is_admin && <Link href="/app/widgets">Widgets</Link>}
+          {playgroundAllowed(me.is_admin) && <Link href="/app/playground">Playground</Link>}
         </nav>
         <span className={styles.me}>
           {me.name} · {me.is_admin ? "Admin" : "Member"}
