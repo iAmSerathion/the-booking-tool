@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { berlin, bookingsOf, dayLabel, fakeEvents, fillDetails, liveEvents, newHost, newPage, nextDay, noSideScroll, openDay, removeHost, zone } from "./booking-helpers";
 import { googleFakeUrl } from "./env";
@@ -12,10 +12,10 @@ test.use({ timezoneId: zone, locale: "en-US" });
 type Host = Awaited<ReturnType<typeof newHost>>;
 
 // Books a time on the host's page and returns the invitee token from the confirmation URL.
-async function book(page: Page, host: Host, day: string, time: string, name = "Robin Invitee") {
+async function book(page: Page, host: Host, day: string, time: string, name = "Robin Invitee", email = `invitee-${randomUUID()}@example.com`) {
   await page.goto(`/${host.slug}`);
   await (await openDay(page, day)).getByRole("button", { name: time }).click();
-  await fillDetails(page, name, `invitee-${randomUUID()}@example.com`);
+  await fillDetails(page, name, email);
   await page.getByRole("button", { name: "Book this time" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your booking is confirmed.");
   return new URL(page.url()).pathname.split("/").at(-1)!;
@@ -156,6 +156,50 @@ test("an invitee cancels with a reason: Google event removed, outbox row, closed
     await expect(page.getByLabel("Email", { exact: true })).toHaveValue(row!.invitee_email);
   } finally {
     await second.context().close();
+    await removeHost(host.id);
+  }
+});
+
+test("filling the invitee's email rate limit through the public booking form does not block their reschedule, cancel or rebook", async ({ page }) => {
+  const host = await newHost({ name: "Avery Host" });
+  try {
+    const day = nextDay([1, 2, 3, 4, 5]);
+    const email = `victim-${randomUUID()}@example.com`;
+    const token = await book(page, host, day, "9:00 AM", "Robin Invitee", email);
+    const [booking] = await bookingsOf(host.id);
+
+    // Anyone can send the invitee's email to the booking form. Fill that email's bucket (limit.ts keys it like this),
+    // then one real submit shows the form refusing that email.
+    const bucket = createHmac("sha256", process.env.SCHEDULER_SECRET!).update(`booking-attempt:email:${email}`).digest("hex");
+    const { error } = await admin().from("booking_attempts").insert(Array.from({ length: 1000 }, () => ({ ip_hash: bucket })));
+    if (error) throw error;
+    try {
+      await page.goto(`/${host.slug}`);
+      await (await openDay(page, day)).getByRole("button", { name: "3:00 PM" }).click();
+      await fillDetails(page, "Someone Else", email);
+      await page.getByRole("button", { name: "Book this time" }).click();
+      await expect(alert(page)).toHaveText("Too many attempts. Please wait a minute and try again.");
+
+      // The token holder still reschedules, cancels and books again.
+      await page.goto(`/reschedule/${token}`);
+      await (await openDay(page, day)).getByRole("button", { name: "2:00 PM" }).click();
+      await page.getByRole("button", { name: "Move to this time" }).click();
+      await expect(page).toHaveURL(new RegExp(`/confirmed/${token}$`));
+      await expect(page.getByText(`${longDay(day)}, 2:00 PM to 2:30 PM`)).toBeVisible();
+
+      await page.goto(`/cancel/${token}`);
+      await page.getByRole("button", { name: "Cancel booking" }).click();
+      await expect(heading(page)).toHaveText("This booking was cancelled.");
+      const { data: row } = await admin().from("bookings").select("state, reschedule_count").eq("id", booking.id).single();
+      expect(row).toEqual({ state: "cancelled", reschedule_count: 1 });
+
+      await page.goto(`/confirmed/${token}`);
+      await page.getByRole("link", { name: "Book a new time" }).click();
+      await expect(page).toHaveURL(/\/l\/[\w-]{43}$/);
+    } finally {
+      await admin().from("booking_attempts").delete().eq("ip_hash", bucket);
+    }
+  } finally {
     await removeHost(host.id);
   }
 });
