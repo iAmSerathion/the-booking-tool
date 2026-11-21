@@ -28,8 +28,8 @@ you embed it.
 ```
 
 Load the script once per page; add as many buttons as you like. A plain click opens the dialog; without the script, or
-with Ctrl, Cmd, Shift, Alt or a middle click, the link opens the booking page itself. `data-locale` (`en` or `de`) sets the
-language of the dialog's labels. Style the button as you like; the link text is yours.
+with Ctrl, Cmd, Shift, Alt or a middle click, the link opens the booking page itself. `data-locale` (`en` or `de`, default `en`)
+sets the language of the dialog's labels. Style the button as you like; the link text is yours.
 
 ## 3. Section
 
