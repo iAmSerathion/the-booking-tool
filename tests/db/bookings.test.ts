@@ -298,8 +298,28 @@ describe("create_booking", () => {
       const events = await outbox(client, id);
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe("booking.created");
-      expect(events[0].payload).toMatchObject({ id, host_id: host, invitee_email: "ada@example.com" });
-      for (const hidden of ["token_hash", "guest_responses", "google_change_until"]) expect(events[0].payload).not.toHaveProperty(hidden);
+      // The webhook payload shape (README "Webhooks"): no internal columns, host and event type resolved.
+      const { slug, title } = (await client.query("select slug, title from public.event_types where id = $1", [eventType])).rows[0];
+      expect(events[0].payload).toEqual({
+        id,
+        state: "booked",
+        cancelled_by: null,
+        starts_at: expect.any(String),
+        ends_at: expect.any(String),
+        host: { id: host, name: expect.any(String), email: "host@example.com" },
+        attendee: { name: "Ada Example", email: "ada@example.com", company: null, phone: null, timezone: null },
+        topic: "Hi",
+        answers,
+        event_type: { id: eventType, slug, title },
+        booked_via: "page",
+        widget_id: null,
+        booking_page: null,
+        link: null,
+        meet_url: null,
+        reschedule_count: 0,
+        created_at: expect.any(String),
+      });
+      expect(new Date(events[0].payload.starts_at as string).toISOString()).toBe(at(10));
 
       expect(await scalar(client, "select count(*)::int from public.slot_holds where id = $1", [holdId])).toBe(0);
       expect((await sqlError(client, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30) })])).code).toBe(
