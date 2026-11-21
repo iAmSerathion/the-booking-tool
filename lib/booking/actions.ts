@@ -191,6 +191,8 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
       await release();
       if (error.code === "P0003") return { ok: false, error: "booking.error.failed" };
       if (error.code === "P0004") return { ok: false, error: "booking.error.linkInvalid" };
+      // The widget was switched off, lost this host or changed its event type after the page loaded.
+      if (error.code === "P0005") return { ok: false, error: "booking.error.widgetClosed" };
       if (error.code === "P0002") return taken();
       console.error("booking: create_booking", error);
       return { ok: false, error: "booking.error.failed" };

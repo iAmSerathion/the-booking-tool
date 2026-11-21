@@ -398,6 +398,7 @@ describe("bookSlot", () => {
     ["P0002", { ok: false, error: "booking.error.taken", slots: [{ start: later, end: "2026-11-04T13:30:00.000Z" }] }],
     ["P0003", { ok: false, error: "booking.error.failed" }],
     ["P0004", { ok: false, error: "booking.error.linkInvalid" }],
+    ["P0005", { ok: false, error: "booking.error.widgetClosed" }],
     ["XX000", { ok: false, error: "booking.error.failed" }],
   ])("rolls back the event quietly and releases the hold when create_booking fails with %s", async (code, result) => {
     state.createBooking = [{ code, message: "no" }];
