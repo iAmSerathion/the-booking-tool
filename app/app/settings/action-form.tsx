@@ -36,7 +36,7 @@ export function ActionForm({
           </p>
         ) : (
           <p role="status" className={styles.status}>
-            {state.saved && !pending ? "Saved." : ""}
+            {state.saved && !pending ? (state.message ?? "Saved.") : ""}
           </p>
         )}
       </div>

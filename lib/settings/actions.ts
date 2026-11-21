@@ -6,8 +6,8 @@ import { parseRules, parseWindows, timeZones, weekdays } from "@/lib/core/settin
 import { createAdminSupabase } from "@/lib/db/admin";
 import { revokeToken } from "@/lib/google/oauth";
 
-// What a settings form shows after saving: an inline error, or a short confirmation.
-export type ActionState = { error: string | null; saved: boolean };
+// What a settings form shows after saving: an inline error, or a short confirmation (message, else "Saved.").
+export type ActionState = { error: string | null; saved: boolean; message?: string };
 
 const saved: ActionState = { error: null, saved: true };
 const failed = (error: string): ActionState => ({ error, saved: false });
