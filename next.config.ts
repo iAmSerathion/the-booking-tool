@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // next dev would otherwise write an untracked AGENTS.md into the repo root.
+  agentRules: false,
   async headers() {
     return [
       {

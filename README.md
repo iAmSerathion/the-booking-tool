@@ -1,290 +1,85 @@
 # the-booking-tool
 
-A self-hostable booking tool: connect your Google Calendar, share booking pages and personal links, and embed booking widgets on your website.
+A self-hostable booking tool for a team. Members sign in with Google, connect their Google Calendar, and invitees book
+free times on public booking pages, through booking links or in widgets embedded on your website. Every booking becomes
+a Google Calendar event, with a Meet link when the member switches Meet on.
 
-Work in progress. Not ready for use yet.
+Status: pre-release (version 0.0.0). Expect changes before a first tagged release.
+
+## Features
+
+- **Google sign-in** through Supabase Auth; access by invitation, by Google Workspace domain, and a first admin from
+  `INITIAL_ADMIN_EMAIL`.
+- **Google Calendar availability:** times come from each member's availability windows, buffers, minimum notice and
+  daily maximum, minus their Google busy times. Bookings create Google events, with Meet when the member switches it on.
+- **Booking pages:** a general page at `/` (one member or round robin) and a page per member at `/<slug>`.
+- **Widgets** for other websites, as a dialog or an inline section, for one member or round robin over chosen members,
+  pinned to the sites allowed to embed them.
+- **Booking links** (`/l/<token>`) with a fixed host and event type, prefill, metadata, single use and expiry.
+- **Event types** with duration and up to 20 booking questions.
+- **Reschedule and cancel links** for invitees, plus "book a new time" after a cancel.
+- **Mail over SMTP:** confirmations, change notices and reminders (24 hours and 1 hour before, configurable), retried
+  with backoff.
+- **Calendar sync:** moving or deleting the Google event, or the invitee declining, updates the booking.
+- **Signed webhooks** for every booking change (HMAC-SHA256, at least once, in order per booking).
+- **Admin:** bookings, links, widgets, event types, team (invite, roles, deactivate with handover) and a widget
+  playground.
+
+### Limits of v1
+
+- Google only: Google sign-in and Google Calendar. No Outlook, CalDAV or password login.
+- One team per instance; no multi-tenancy.
+- Supabase is required (Postgres, Auth, Vault). Plain Postgres is not supported.
+- Interface and mails in German and English (`DEFAULT_LOCALE`, default `de`).
+- SMTP only for mail. No Dockerfile is provided.
 
 ## Stack
 
-Next.js (App Router), Supabase (Postgres, Auth, Vault), Google Calendar and Meet, SMTP for mail.
+Next.js (App Router) on Node 24, Supabase (Postgres, Auth, Vault), Google Calendar and Meet, SMTP (nodemailer).
 
-## Local development
+## Quick start (local development)
 
 Requirements: Node 24+ and Docker.
 
 ```bash
-npm install
+npm ci
 npm run stack:up             # local Supabase on 127.0.0.1, writes .env.e2e.local
-cp .env.example .env.local   # fill in the values; Supabase URL and keys are in .env.e2e.local
-npm run dev
-npm run stack:down           # stop it and delete its data
+# create .env.local: copy the minimal block from CONTRIBUTING.md and paste in the two keys from .env.e2e.local
+node tests/e2e/google-fake.mjs   # terminal 1: stands in for Google Calendar
+node tests/e2e/smtp-sink.mjs     # terminal 2: catches the mails
+npm run dev                      # terminal 3: http://127.0.0.1:3000 (bound to 127.0.0.1 only)
+npm run dev:calendar             # connects the seeded host to the Google fake
+npm run dev:login                # own terminal: prints a one-time URL for /app, waits until it is opened
+npm run stack:down               # stop the stack and delete its data
 ```
 
-`npm run stack:up` starts Postgres, GoTrue (auth), PostgREST and a Kong gateway with docker compose
-(`scripts/stack/`), always from scratch: it applies `supabase/migrations` and `supabase/seed.sql` and generates new
-keys each time. The API listens on `127.0.0.1:54421`, Postgres on `127.0.0.1:54422`. Every port is bound to
-127.0.0.1 only; `supabase start` would publish on all interfaces. `supabase/config.toml` uses the same ports for CI.
+The minimal `.env.local` is in [CONTRIBUTING.md](CONTRIBUTING.md#local-development). The stack seeds example members
+(`admin.demo@example.com`, `host.demo@example.com`), an event type and a widget. With the steps above you can book a
+time on `http://127.0.0.1:3000/demo-host` and open the admin without a Google OAuth client; details in
+[Try it without Google](CONTRIBUTING.md#try-it-without-google). `npm run dev:calendar` and `npm run dev:login` refuse a
+Supabase that is not on this machine. Signing in with Google by hand needs a real Google OAuth client:
+[Signing in locally](CONTRIBUTING.md#signing-in-locally).
 
-Seeded members: `admin.demo@example.com` (admin) and `host.demo@example.com` (bookable). Login is Google only. The
-e2e tests sign in with generated magic-link sessions (`tests/e2e/session.ts`). By default the stack carries a fake Google
-client, so "Sign in with Google" in `npm run dev` fails at Google. To sign in by hand, create a Google OAuth web client
-with the redirect URI `http://127.0.0.1:54421/auth/v1/callback`, then start the stack with it:
+Run the checks with `npm run lint`, `npm run typecheck` and `npm test`; the database and end-to-end tests are in
+[CONTRIBUTING.md](CONTRIBUTING.md#checks).
 
-```bash
-GOOGLE_CLIENT_ID=<client id> GOOGLE_CLIENT_SECRET=<client secret> npm run stack:up
-```
+## Documentation
 
-Put the same two values and the Supabase keys from `.env.e2e.local` into `.env.local`. Sign in with `INITIAL_ADMIN_EMAIL`
-or an invited address. The calendar connection also needs `<APP_URL>/api/google/callback` among the client's redirect URIs.
-
-## Sign-in
-
-Members sign in with Google through Supabase Auth; there is no password or magic-link login.
-
-- In Supabase, enable the Google provider with a Google OAuth web client whose redirect URI is
-  `<NEXT_PUBLIC_SUPABASE_URL>/auth/v1/callback`, and add `<APP_URL>/auth/callback` to the Auth redirect allow-list.
-  The calendar connection uses its own redirect (`<APP_URL>/api/google/callback`); one Google client can carry both.
-- Who gets in: members an admin invited; anyone from a Workspace domain in `ALLOWED_GOOGLE_DOMAINS` (they get a member
-  profile on first sign-in); and, on a fresh install, `INITIAL_ADMIN_EMAIL`, which becomes the first admin. With
-  `ALLOWED_GOOGLE_DOMAINS` empty, sign-in is invite-only and any Google account (Gmail included) works.
-- Deactivated members and everyone else are signed out with a notice.
-
-## Booking pages
-
-- `/` is the general booking page. Settings decide who gets the booking: one member (`website_mode` "person" with
-  `website_person_id`) or round robin over all bookable members, where the free member whose last booking from this
-  page is oldest wins.
-- `/<slug>` is a member's own page. Unknown or not bookable members get the 404 page.
-- Both offer the default event type (`settings.default_event_type_id`). With more than one active event type, a row of
-  links above the form switches to another one (`?type=<event type link name>`, e.g. `/?type=discovery-call`); unknown
-  or switched-off types get the 404 page. Booking links and widgets keep their fixed event type. Times come from the member's availability
-  windows, buffer, minimum notice, daily maximum and the slot horizon, minus Google busy times. Only members with a
-  working calendar connection offer times. Slots start every 30 minutes, whatever the duration.
-- Booking checks everything again on the server, holds the time, creates the Google event (with Meet when the member
-  has it switched on) and saves the booking; if a step fails, nothing stays behind. The invitee lands on
-  `/confirmed/<token>`; only the token's hash is stored.
-- Brand, privacy and imprint links come from `BRAND_NAME`, `BRAND_LOGO_URL`, `PRIVACY_URL` and `IMPRINT_URL`. With a
-  privacy URL set, invitees must confirm they read it.
-- Booking attempts are rate limited per client address (`BOOKING_ATTEMPTS_PER_MINUTE`), which is only known behind a
-  proxy with `TRUST_PROXY_HEADERS=true`. Without it the limit is per invitee email, plus a global ceiling of 20 times
-  that number. A flood of many different emails can still reach the ceiling and pause booking for everyone until it
-  stops, so set `TRUST_PROXY_HEADERS=true` in production behind a proxy that appends the client address. Reschedule,
-  cancel and "book a new time" are limited per booking instead, so nobody who only knows the invitee's email can lock
-  them out of their own booking.
-- If the invitee already has an upcoming booking of the event type, the page gives the same answer as for any other
-  failure (its text points to the invitation in their email), so nobody can find out from outside whether an email has
-  a booking.
-
-## Changes, booking links and the admin
-
-- The confirmation page links to `/reschedule/<token>` and `/cancel/<token>`. Invitees can move a booking to another free
-  time of the same host and event type, or cancel it with an optional reason, until it starts. The Google event is
-  moved or removed with updates to the guest; a failed move changes nothing. A cancelled booking offers "Book a new
-  time" (`/cancel/<token>/new`), a fresh single-use booking link to the same host with the invitee's details filled in.
-- Booking links (`/l/<token>`) fix the host and event type and can carry prefill (name, email, company, answers),
-  metadata (stored with the booking and sent in the outbox payload), single use and an expiry. Members create and
-  revoke their own links under Links in the admin, admins any member's. The link is shown once; only its hash is stored.
-  Unknown, used, expired and revoked links all show the same closed page.
-- Bookings in the admin lists upcoming bookings (members their own, admins all) with the invitee's answers and the link
-  metadata, in the viewer's time zone. Cancelling there removes the Google event with an update to the guest.
-
-## Widgets
-
-- Admins create widgets under Widgets in the admin: name, event type, one person or round robin over chosen members,
-  and the sites (origins) allowed to embed it. Each widget shows a window and a section snippet built from `APP_URL`;
-  Playground (admins, or any member under `next dev`) tries a widget with a prefill. How to embed: [docs/embedding.md](docs/embedding.md).
-- Widget pages (`/widget/<id>`) send `frame-ancestors` with the widget's allowed sites (or `EMBED_ALLOWED_ORIGINS` when it
-  has none) plus `APP_URL`, read per request; switched-off and unknown widgets get `'none'`. Every other page keeps
-  `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
-  the widget and the host page they came from.
-
-## Event types
-
-- Admins manage event types under Event types in the admin: title, link name, description, duration (5 to 480 minutes,
-  steps of 5) and up to 20 booking questions (one choice, several choices or text, each optional or required). The
-  answers are stored with the booking, sent in the outbox payload and shown under Bookings. Questions keep their id
-  when edited, so prefills and stored answers still match; removing one drops its prefill.
-- One active type is the default (what `/` and `/<slug>` book without `?type=`); it cannot be switched off until
-  another type is the default. Event types are never deleted. Switching one off closes its widgets and booking links.
-
-## Team
-
-- Team in the admin lists every member with their booking page. Admins make members admin or bookable, change link
-  names (the old `/<slug>` stops working; reserved words are the app's routes), invite members by their Google account
-  email, reactivate deactivated members and choose who gets bookings from `/` (one person or round robin). At least
-  one active member always stays an admin.
-- An invite creates the account and profile; no mail is sent, so the admin tells the person to sign in at
-  `<APP_URL>/login`. Invited members get in whatever `ALLOWED_GOOGLE_DOMAINS` says; with `GOOGLE_HOSTED_DOMAIN` set,
-  only emails of that domain can be invited. New members start not bookable until they connect a calendar.
-- Deactivating a member hands everything to a successor: their upcoming bookings get new events in the successor's
-  calendar (invitees get a new invitation with a new confirmation link, and the old event is cancelled), their widgets
-  and website bookings move, and their Google connection is revoked and removed. The successor must be bookable with
-  a connected calendar when there is anything to take over. If Google or the database refuses, the new events are
-  deleted again and nothing changes. Deactivated members cannot sign in and their booking page is gone; reactivating
-  them gives nothing back.
-
-## Mail
-
-- Mail goes out over SMTP (`SMTP_URL`, `smtp://` or `smtps://` with credentials in the URL) from `MAIL_FROM`. Mails to
-  the invitee reply to the host; mails to the host reply to the invitee.
-- After a booking: a confirmation to the invitee (when, what, with whom, the Meet link, and links to reschedule or
-  cancel, all from `APP_URL`) and a notice to the host with the invitee's details and answers. Google sends the
-  calendar invitation itself, so the mail carries no `.ics`. A new time and a cancellation each send one mail to both
-  sides, with "book a new time" for the invitee; a host who cancels their own booking gets no notice, an admin's cancel
-  is told to the host. The copy is in `messages/` (`mail.*`, German and English, `DEFAULT_LOCALE`).
-- Each occasion is one `outbound_mails` row with a unique `send_key`, written before the first attempt, so it goes out
-  once (at least once if SMTP accepts a mail and the "sent" update is lost). The row keeps the composed mail. A failed
-  attempt is retried with backoff (1 min, 5 min, 30 min, 2 h, 6 h) by the scheduler (`retryDueMails`), never at or after
-  the row's `send_until` (the booking's start for most mails); then it is marked failed. A retry is also dropped once
-  the booking is cancelled (except the cancel notices) or, for reminders and calendar move notices, moved.
-
-## Reminders and the scheduler
-
-- Every booking gets reminder mails to the invitee, by default 24 hours and 1 hour before the start. Set the settings
-  row `reminder_offsets_minutes` to a JSON array of minutes (e.g. `[2880, 120]`, at most 5, up to 30 days; `[]` turns
-  reminders off). A reminder carries fresh reschedule and cancel links. A late reminder still goes out until the next
-  smaller one is due (the smallest until the start); a booking that was moved or cancelled gets none for the old time.
-- Reminders are `booking_jobs`, planned after a booking and re-planned after a reschedule; a cancel or a move cancels
-  the open ones in the database.
-- `POST /api/jobs/scheduler` runs due jobs, mail retries, the calendar upkeep and the webhooks (below). Something has to call it
-  every minute with `Authorization: Bearer <SCHEDULER_SECRET>` (at least 32 characters, compared in constant time):
-
-  ```bash
-  curl -fsS -X POST -H "Authorization: Bearer $SCHEDULER_SECRET" "$APP_URL/api/jobs/scheduler"
-  ```
-
-  Any cron works (system cron, a container, your host's scheduled jobs). On Supabase you can instead run
-  `supabase/optional/scheduler_cron.sql` once (pg_cron and pg_net, secrets in Vault); it is not part of the migrations
-  and is never applied by default.
-- `SCHEDULER_TEST_CLOCK=true` is for the e2e tests only: the scheduler then honours `x-test-now`, scoped to one booking
-  (`x-test-booking`: its jobs, mail retries and webhooks) or member (`x-test-user`: calendar upkeep). Config refuses it unless `APP_URL` is localhost, 127.0.0.1 or [::1].
+- [SELF-HOSTING.md](SELF-HOSTING.md): Google Cloud, Supabase, environment variables, the scheduler, deployment,
+  upgrades and troubleshooting.
+- [docs/features.md](docs/features.md): how sign-in, booking pages, links, widgets, event types, the team, mail,
+  reminders and calendar sync behave.
+- [docs/embedding.md](docs/embedding.md): embedding widgets on your website.
+- [docs/webhooks.md](docs/webhooks.md): webhook events, payload, signature and delivery.
+- [SECURITY.md](SECURITY.md): reporting vulnerabilities and the security model.
+- [CONTRIBUTING.md](CONTRIBUTING.md): development setup, checks and conventions.
 
 ## Webhooks
 
-Set `WEBHOOK_URL` and `WEBHOOK_SECRET` (at least 32 characters) and every booking change is POSTed there as JSON. The
-change and its event are written in one database transaction (`booking_outbox`); the scheduler sends the events.
-`WEBHOOK_URL` must be https (plain http only for localhost, 127.0.0.1 or [::1]) and must not contain a username or
-password.
-
-| Event | When |
-|---|---|
-| `booking.created` | An invitee booked (page, person link, booking link or widget). |
-| `booking.rescheduled` | The invitee moved it (`changed_by: "invitee"`) or the host moved the Google event (`"calendar"`). |
-| `booking.cancelled` | The invitee cancelled or declined the invitation (`"invitee"`), the host cancelled in the admin (`"host"`) or deleted the Google event (`"calendar"`). |
-| `booking.host_changed` | A deactivated member's future bookings were handed to a successor (`"admin"`, with `previous_host_id`). |
-
-Example body (headers: `X-Webhook-Id` = `id`, `X-Webhook-Event` = `type`, `X-Signature`, `User-Agent: the-booking-tool`):
-
-```json
-{
-  "id": "6f1c2a52-0d4e-4c3b-9b7a-2f0e8c1d5a10",
-  "type": "booking.rescheduled",
-  "created_at": "2026-12-01T09:12:44.381234+00:00",
-  "booking": {
-    "id": "0b8e4f3c-7a21-4d6e-8f55-1c2d3e4f5a6b",
-    "state": "booked",
-    "cancelled_by": null,
-    "starts_at": "2026-12-03T14:00:00+00:00",
-    "ends_at": "2026-12-03T14:30:00+00:00",
-    "host": { "id": "c3d4e5f6-0000-4000-8000-000000000001", "name": "Avery Host", "email": "avery@example.com" },
-    "attendee": { "name": "Sam Invitee", "email": "sam@example.com", "company": "Example Inc", "phone": null, "timezone": "Europe/Berlin" },
-    "topic": "Pricing",
-    "answers": [{ "id": "goal", "question": "What is your goal?", "answer": "Growth" }],
-    "event_type": { "id": "d4e5f6a7-0000-4000-8000-000000000002", "slug": "meeting", "title": "Meeting" },
-    "booked_via": "widget",
-    "widget_id": "e5f6a7b8-0000-4000-8000-000000000003",
-    "booking_page": "https://www.example.com/contact",
-    "link": null,
-    "meet_url": "https://meet.google.com/abc-defg-hij",
-    "reschedule_count": 1,
-    "created_at": "2026-12-01T09:00:02+00:00",
-    "previous": { "starts_at": "2026-12-03T09:00:00+00:00", "ends_at": "2026-12-03T09:30:00+00:00" },
-    "changed_by": "invitee"
-  }
-}
-```
-
-Timestamps are ISO 8601 with an offset (Postgres format, e.g. `2026-12-01T09:12:44.381234+00:00`); parse them, do not
-compare them as strings. `booking` is a snapshot taken when the change happened. `link` is `{id, metadata}` for bookings made through a booking
-link. Cancel events add `reason` (or null) and `changed_by`.
-
-Verify `X-Signature` (`sha256=` + hex HMAC-SHA256 of the raw body with `WEBHOOK_SECRET`) before parsing the body:
-
-```js
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-// rawBody: the request body exactly as received (a Buffer or string), not re-serialized JSON.
-export function verifyWebhook(rawBody, signatureHeader, secret) {
-  const expected = Buffer.from(`sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`);
-  const given = Buffer.from(signatureHeader ?? "");
-  return given.length === expected.length && timingSafeEqual(given, expected);
-}
-
-// Replay protection, after the signature check. seen: ids kept for at least 72 hours (a store shared by your instances).
-// On false, answer 2xx without processing again. Call seen.add(event.id) only after you processed the event, so a
-// failed attempt (your 5xx) is processed when it comes again.
-export function shouldProcess(event, seen) {
-  if (Date.now() - Date.parse(event.created_at) > 72 * 60 * 60 * 1000) return false;
-  return !seen.has(event.id);
-}
-```
-
-- **Replay protection:** the signature covers the body, which carries `id` (= `X-Webhook-Id`) and `created_at`, so a
-  captured request can only be replayed unchanged. Reject events whose `created_at` is older than 72 hours and remember
-  seen ids for at least 72 hours. An event's own retries span about 21 hours, but it may first wait behind older events of
-  the same booking; 72 hours after creation is the hard cap for every event.
-
-- **Delivery** counts on any 2xx answer within 10 seconds. Redirects are not followed and count as failures.
-- **Retries** after 1, 5 and 30 minutes, 2, 6 and 12 hours; then the event is given up. `last_error` in
-  `booking_outbox` keeps only a short reason (`http 500`, `timeout`, `network error`), never the response body.
-- **Order:** a booking's next event is not sent while an older one of the same booking is still pending, so you see
-  created, rescheduled and cancelled in that order. A given-up event no longer holds the next ones back.
-- **At least once:** if your 2xx answer gets lost, the same event comes again with the same `X-Webhook-Id` and body.
-  Dedupe by `X-Webhook-Id`.
-- **Without `WEBHOOK_URL`** due events are given up (`not configured`), so turning webhooks on later does not replay the
-  history. Events still pending after 72 hours are given up (`expired`).
-- **Retention:** delivered and given-up events are deleted after 30 days, since they hold the invitee's personal data.
-
-## Calendar sync
-
-- Changes made in a host's Google calendar reach the booking: the host moving the event moves the booking (the
-  reminders are planned anew, and the invitee gets a mail with the new time and fresh links); the host deleting the
-  event cancels the booking as the host (the invitee is told); the invitee declining the invitation cancels it like the
-  cancel link (the event is removed, both sides are told, with the same mails, so never twice). Other guests' answers
-  and the host's own decline are only stored. Past bookings are not cancelled from the calendar.
-- Events the database does not know are skipped, including events with this tool's `booking_id` property from another
-  install sharing the calendar. While an invitee's reschedule is moving the event, changes to that booking wait for the
-  next sync. Each event is applied on its own; one that fails is logged and skipped.
-- Google pushes changes to `$APP_URL/api/google/calendar-webhook` through a channel per member, created right after
-  connecting and renewed daily by the scheduler; disconnecting or deactivating a member stops it. Google only notifies
-  **https** addresses with a valid certificate, so `APP_URL` must be public https for push. The route answers at once
-  and checks the channel id and secret (stored as a hash). Without push (plain http, or Google refused the channel,
-  retried hourly) the scheduler still syncs every connected calendar every 15 minutes.
-
-## Checks
-
-```bash
-npm run lint
-npm run typecheck
-npm test            # unit tests (Vitest)
-npm run test:e2e    # end-to-end tests (Playwright, builds the app first); needs `npm run stack:up`
-npm run db:test     # fresh local test database on 127.0.0.1:55432 (Docker), migrations and seed
-npm run test:db     # database tests against it
-npm run db:lint     # plpgsql_check on the local test database (CI: supabase db lint)
-```
-
-The e2e tests start four servers: the production build on `127.0.0.1:3100`, an SMTP sink (`tests/e2e/smtp-sink.mjs`,
-test-only) that takes the app's mail on `127.0.0.1:2525` and hands it to tests on `127.0.0.1:2526`, a Google fake on `127.0.0.1:3999`
-(`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host) and a
-widget host page (`tests/e2e/embed-site.mjs`, test-only) on `127.0.0.1:3101` as the allowed origin and `127.0.0.1:3102`
-as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two ports. The
-fake covers the calendar connection (consent, tokens, calendar list, free/busy), events (insert with Meet, list,
-move, delete), incremental sync (sync tokens, a 410 on request) and push channels, which notify the app (loopback
-addresses only) on every change; its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
-login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
-of skipping logged-in tests. Specs that change the seeded admin or the website default run in their own Playwright
-projects (`team-admins`, then `bootstrap`) after all others. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
+Set `WEBHOOK_URL` and `WEBHOOK_SECRET` and every booking change (`booking.created`, `booking.rescheduled`,
+`booking.cancelled`, `booking.host_changed`) is POSTed there as signed JSON. Payload, signature check, retries and
+replay protection: [docs/webhooks.md](docs/webhooks.md).
 
 ## License
 
-[AGPL-3.0](LICENSE)
+[AGPL-3.0-only](LICENSE). Contributions are accepted under the same license; see [CONTRIBUTING.md](CONTRIBUTING.md).

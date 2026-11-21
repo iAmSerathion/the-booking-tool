@@ -46,4 +46,4 @@ createServer((req, res) => {
   }
   res.statusCode = 404;
   res.end();
-}).listen(httpPort, "127.0.0.1");
+}).listen(httpPort, "127.0.0.1", () => console.log(`SMTP sink listening on smtp://127.0.0.1:${smtpPort}, mails at http://127.0.0.1:${httpPort}/messages?to=<address>`));

@@ -4,7 +4,10 @@
 --   00000000-0000-4000-8000-000000000002  host member   host.demo@example.com  (bookable, page /demo-host)
 --   00000000-0000-4000-8000-000000000101  event type    discovery-call (30 min, one question)
 --   00000000-0000-4000-8000-000000000201  widget        "Example site", person mode, embeddable on https://example.com
--- No bookings. Login is Google OAuth; these users have no password (e2e signs in with generated magic links).
+-- No bookings. Login is Google OAuth; these users have no password (e2e signs in with generated magic links), and
+-- nobody can receive mail or own a Google account at example.com, so they cannot be signed in to by hand.
+-- Development only: never apply this to a real install (`supabase db push` leaves it out unless --include-seed). Its
+-- active admin would stop INITIAL_ADMIN_EMAIL from creating the first real admin.
 
 -- Members: auth users first, then profiles. The profiles insert trigger adds the default availability windows
 -- (Monday to Friday, 09:00-12:00 and 14:00-17:00, from settings.default_availability).

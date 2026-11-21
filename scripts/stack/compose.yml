@@ -46,7 +46,7 @@ services:
       # GoTrue always talks to accounts.google.com for this provider (it ignores GOTRUE_EXTERNAL_GOOGLE_URL), so the
       # e2e login uses magic-link sessions (tests/e2e/session.ts). Enabled so the app can start the redirect.
       GOTRUE_EXTERNAL_GOOGLE_ENABLED: "true"
-      # Export GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before `npm run stack:up` to sign in by hand (see README).
+      # Export GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET before `npm run stack:up` to sign in by hand (see CONTRIBUTING.md).
       GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-fake-client}
       GOTRUE_EXTERNAL_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-fake-secret}
       GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI: http://127.0.0.1:54421/auth/v1/callback

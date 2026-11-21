@@ -28,8 +28,8 @@ you embed it.
 ```
 
 Load the script once per page; add as many buttons as you like. A plain click opens the dialog; without the script, or
-with Ctrl, Cmd, Shift, Alt or a middle click, the link opens the booking page itself. `data-locale` (`en` or `de`) sets the
-language of the dialog's labels. Style the button as you like; the link text is yours.
+with Ctrl, Cmd, Shift, Alt or a middle click, the link opens the booking page itself. `data-locale` (`en` or `de`, default `en`)
+sets the language of the dialog's labels. Style the button as you like; the link text is yours.
 
 ## 3. Section
 
@@ -100,7 +100,7 @@ If your site sends a CSP, allow the instance: `script-src APP_URL` and `frame-sr
 
 - **Blank frame or browser error page in the window, `booking-widget:unavailable` in a section**: your origin is not
   among the widget's allowed sites (check scheme, `www` and port), or the widget is switched off. The instance sends
-  `Content-Security-Policy: frame-ancestors` with exactly the allowed sites, and `'none'` for a switched-off or unknown
+  `Content-Security-Policy: frame-ancestors` with the widget's allowed sites (or `EMBED_ALLOWED_ORIGINS` when it has none) plus `APP_URL`, and `'none'` for a switched-off or unknown
   widget.
 - **"Booking here is not possible right now"** shows only when the widget page is opened directly while the widget is
   off, its event type is off or nobody can be booked.

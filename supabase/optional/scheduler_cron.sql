@@ -1,10 +1,12 @@
 -- OPTIONAL, not applied by migrations, db reset or the tests: run the scheduler from the database every minute with
--- pg_cron and pg_net. Use it instead of an external cron (see the README, "Scheduler"). Run it once in the SQL editor of
+-- pg_cron and pg_net. Use it instead of an external cron (see SELF-HOSTING.md, "Scheduler"). Run it once in the SQL editor of
 -- your Supabase project, after storing the two Vault secrets it reads (placeholders; put in your own values):
 --
 --   select vault.create_secret('<APP_URL>/api/jobs/scheduler', 'scheduler_url');
 --   select vault.create_secret('<SCHEDULER_SECRET>', 'scheduler_secret');
 --
+-- To change a value later (update_secret takes the id, not the name):
+--   select vault.update_secret((select id from vault.secrets where name = 'scheduler_secret'), '<new SCHEDULER_SECRET>');
 -- To stop it: select cron.unschedule('booking-scheduler');
 
 create extension if not exists pg_cron;
