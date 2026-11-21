@@ -10,6 +10,7 @@ import {
   type AvailabilityInput,
   type CalendarEvent,
   type Slot,
+  withoutBooking,
 } from "./availability";
 import { zonedClock, zonedDay } from "./dates";
 import { type TimeWindow, windowsByDay } from "./settings";
@@ -362,5 +363,30 @@ describe("extra calendars: also events marked free and all-day events", () => {
     expect(times(slots, "2026-11-05")).toEqual([]);
     expect(times(slots, "2026-11-04")[0]).toBe("09:00");
     expect(times(slots, "2026-11-04").at(-1)).toBe("16:00");
+  });
+});
+
+describe("rescheduling: the booking being moved does not block itself", () => {
+  // The own booking 09:00-09:45 Berlin, as both a Google busy block and a tool booking; two more bookings fill the day.
+  const own = block("2026-11-02T08:00:00Z", "2026-11-02T08:45:00Z");
+  const others = [block("2026-11-02T13:00:00Z", "2026-11-02T13:45:00Z"), block("2026-11-02T15:00:00Z", "2026-11-02T15:45:00Z")];
+
+  it("frees its neighbours (buffer) and does not count toward the daily maximum", () => {
+    const full = input({ busy: [own, ...others], bookings: [own, ...others] });
+    expect(times(freeSlots(full), "2026-11-02")).toEqual([]);
+    expect(times(freeSlots(withoutBooking(full, own)), "2026-11-02")).toEqual(["09:00", "09:30", "10:00", "10:30", "11:00", "15:00"]);
+  });
+
+  it("cuts only its own interval out of a larger busy block", () => {
+    const meeting = block("2026-11-02T07:30:00Z", "2026-11-02T09:30:00Z");
+    expect(withoutBooking({ busy: [meeting], bookings: [] }, own).busy).toEqual([
+      block("2026-11-02T07:30:00Z", "2026-11-02T08:00:00Z"),
+      block("2026-11-02T08:45:00Z", "2026-11-02T09:30:00Z"),
+    ]);
+    expect(withoutBooking({ busy: [others[0]], bookings: [] }, own).busy).toEqual([others[0]]);
+  });
+
+  it("drops exactly one booking with its times", () => {
+    expect(withoutBooking({ busy: [], bookings: [own, own, others[0]] }, own).bookings).toEqual([own, others[0]]);
   });
 });

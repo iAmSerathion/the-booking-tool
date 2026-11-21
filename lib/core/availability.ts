@@ -146,3 +146,23 @@ export function slotsByDay(slots: Slot[], input: Pick<AvailabilityInput, "window
 export function slotDayLabel(day: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" }).format(new Date(`${day}T12:00:00Z`));
 }
+
+// Rescheduling ---------------------------------------------------------------------------------------------------------
+
+// The input without the booking being moved: Google free/busy contains its own event and input.bookings the booking
+// itself, so its interval is cut out of every busy block, and one booking with exactly its times is dropped (it neither
+// blocks nor counts toward the daily maximum). Another booking at the same time is never dropped as well.
+export function withoutBooking<T extends Pick<AvailabilityInput, "busy" | "bookings">>(input: T, own: TimeBlock): T {
+  const from = own.start.getTime();
+  const to = own.end.getTime();
+  const busy = input.busy.flatMap((block) => {
+    if (block.end.getTime() <= from || block.start.getTime() >= to) return [block];
+    return [
+      ...(block.start.getTime() < from ? [{ start: block.start, end: own.start }] : []),
+      ...(block.end.getTime() > to ? [{ start: own.end, end: block.end }] : []),
+    ];
+  });
+  const index = input.bookings.findIndex((b) => b.start.getTime() === from && b.end.getTime() === to);
+  const bookings = index < 0 ? input.bookings : input.bookings.filter((_, i) => i !== index);
+  return { ...input, busy, bookings };
+}

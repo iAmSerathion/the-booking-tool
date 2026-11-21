@@ -278,3 +278,19 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Links under a booking: reschedule, cancel, keep, book again. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.actions a {
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
