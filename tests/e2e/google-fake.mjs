@@ -382,4 +382,4 @@ createServer(async (req, res) => {
   if (url.pathname === "/control/granted") return json(res, 200, { scopes: [...(granted.get(url.searchParams.get("email")) ?? [])] });
 
   json(res, 404, { error: "not_found" });
-}).listen(port, "127.0.0.1");
+}).listen(port, "127.0.0.1", () => console.log(`Google fake listening on http://127.0.0.1:${port}`));

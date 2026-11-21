@@ -58,4 +58,4 @@ createServer((req, res) => {
   }
   res.statusCode = 404;
   res.end();
-}).listen(port, "127.0.0.1");
+}).listen(port, "127.0.0.1", () => console.log(`Webhook receiver listening on http://127.0.0.1:${port}`));
