@@ -135,7 +135,8 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 - Each occasion is one `outbound_mails` row with a unique `send_key`, written before the first attempt, so it goes out
   once (at least once if SMTP accepts a mail and the "sent" update is lost). The row keeps the composed mail. A failed
   attempt is retried with backoff (1 min, 5 min, 30 min, 2 h, 6 h) by the scheduler (`retryDueMails`), never at or after
-  the row's `send_until` (the booking's start for most mails); then it is marked failed.
+  the row's `send_until` (the booking's start for most mails); then it is marked failed. A retry is also dropped once
+  the booking is cancelled (except the cancel notices) or, for reminders and calendar move notices, moved.
 
 ## Reminders and the scheduler
 
