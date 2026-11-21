@@ -106,6 +106,7 @@
   "mail.confirmation.intro": "your booking is confirmed.",
   "mail.rescheduled.subject": "New time: {event} with {host}",
   "mail.rescheduled.intro": "your booking has a new time.",
+  "mail.calendarMoved.intro": "{host} moved your booking to a new time.",
   "mail.cancelled.subject": "Cancelled: {event} with {host}",
   "mail.cancelled.intro": "your booking is cancelled.",
   "mail.cancelled.introByHost": "{host} cancelled your booking.",
