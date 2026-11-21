@@ -14,3 +14,6 @@ export function assertLocalSupabase(env: Record<string, string | undefined> = pr
   const { hostname } = new URL(env.NEXT_PUBLIC_SUPABASE_URL!);
   if (!["127.0.0.1", "localhost"].includes(hostname)) throw new Error(`e2e tests only run against a local Supabase, not ${hostname}`);
 }
+// An origin that widgets created by the tests allow; tests/e2e serves embed pages there.
+export const embedPort = Number(process.env.E2E_EMBED_PORT ?? 3101);
+export const embedOrigin = `http://127.0.0.1:${embedPort}`;
