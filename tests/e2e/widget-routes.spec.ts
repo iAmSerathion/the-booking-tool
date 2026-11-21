@@ -44,6 +44,13 @@ test("widget pages get frame-ancestors from the widget row; inactive, unknown an
       expect(response.headers()["x-frame-options"], path).toBeUndefined();
     }
 
+    // Only the exact lowercase /widget/ prefix is a widget page; case variants of an active widget are denied like any page.
+    for (const path of [`/WIDGET/${active}`, `/Widget/${active}/section`, `/WiDgEt/${active}/confirmed/abc`]) {
+      const response = await request.get(path, { maxRedirects: 0 });
+      expect(response.headers()["content-security-policy"], path).toBe("frame-ancestors 'none'");
+      expect(response.headers()["x-frame-options"], path).toBe("DENY");
+    }
+
     // Switching a widget off applies on the next request, no cache in between.
     await admin().from("booking_widgets").update({ active: false }).eq("id", active);
     expect((await request.get(`/widget/${active}`)).headers()["content-security-policy"]).toBe("frame-ancestors 'none'");
