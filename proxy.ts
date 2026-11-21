@@ -8,7 +8,11 @@ import { loadWidget } from "@/lib/widget/data";
 // without a session, or without an active profile, to /login. Security headers still come from next.config.ts.
 // Widget pages only get their frame-ancestors here: no session, no cookies, no redirect for anonymous visitors.
 export async function proxy(request: NextRequest) {
-  if (request.nextUrl.pathname.startsWith("/widget/")) return widgetHeaders(request);
+  const { pathname } = request.nextUrl;
+  if (pathname.startsWith("/widget/")) return widgetHeaders(request);
+  // next.config.ts skips its static deny for "widget/" case-insensitively; case variants (/WIDGET/...) are no widget
+  // page, so they get the deny pair here.
+  if (/^\/widget\//i.test(pathname)) return frameDeny();
   let config;
   try {
     config = getConfig();
@@ -70,4 +74,12 @@ async function widgetHeaders(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ["/app", "/app/:path*", "/widget/:path*"] };
+function frameDeny() {
+  const response = NextResponse.next();
+  response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+  response.headers.set("X-Frame-Options", "DENY");
+  return response;
+}
+
+// The matcher is case-sensitive, so the case variants of /widget/ need their own entry (see frameDeny).
+export const config = { matcher: ["/app", "/app/:path*", "/widget/:path*", "/:w([wW][iI][dD][gG][eE][tT])/:path+"] };
