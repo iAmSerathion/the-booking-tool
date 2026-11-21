@@ -106,6 +106,7 @@
   "mail.confirmation.intro": "dein Termin ist bestätigt.",
   "mail.rescheduled.subject": "Neue Zeit: {event} mit {host}",
   "mail.rescheduled.intro": "dein Termin hat eine neue Zeit.",
+  "mail.calendarMoved.intro": "{host} hat deinen Termin auf eine neue Zeit verschoben.",
   "mail.cancelled.subject": "Abgesagt: {event} mit {host}",
   "mail.cancelled.intro": "dein Termin ist abgesagt.",
   "mail.cancelled.introByHost": "{host} hat deinen Termin abgesagt.",

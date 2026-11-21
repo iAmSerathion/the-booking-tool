@@ -17,7 +17,7 @@ vi.mock("@/lib/db/admin", () => ({
   }),
 }));
 
-const { sendCancelMails, sendConfirmationMails, sendReminderMail, sendRescheduleMails } = await import("./booking");
+const { sendCalendarMoveMail, sendCancelMails, sendConfirmationMails, sendReminderMail, sendRescheduleMails } = await import("./booking");
 const { hashToken } = await import("@/lib/booking/token");
 
 const id = "00000000-0000-4000-8000-000000000001";
@@ -126,6 +126,23 @@ describe("booking mails", () => {
     // A second run for the same start makes no token and no mail.
     state.existing = { id: "row" };
     expect(await sendReminderMail(id, { stepKey: "reminder_1440m", plannedFor, sendUntil })).toBe("duplicate");
+    expect(state.sent).toHaveLength(1);
+    expect(state.tokens).toHaveLength(1);
+  });
+
+  it("tell the invitee once about a move the host made in the calendar, with the time before and fresh links", async () => {
+    await sendCalendarMoveMail(id, { startsAt: new Date("2030-01-06T15:00:00Z"), endsAt: new Date("2030-01-06T15:30:00Z") });
+    const [mail] = state.sent;
+    expect(mail).toMatchObject({ sendKey: `calendar_moved:${id}:2030-01-07T09:00:00.000Z`, to: "ada@example.com", replyTo: "riley@example.com" });
+    expect(mail.sendUntil).toEqual(new Date("2030-01-07T09:00:00Z"));
+    expect(mail.subject).toBe("New time: Intro call with Riley Host");
+    expect(mail.text).toContain("Riley Host moved your booking to a new time.");
+    expect(mail.text).toContain("Before: Sunday, January 6, 2030, 10:00 AM to 10:30 AM (America/New_York (EST))");
+    const token = (mail.text as string).match(/reschedule\/([\w-]+)/)![1];
+    expect(state.tokens).toEqual([{ token_hash: hashToken(token), booking_id: id }]);
+
+    state.existing = { id: "row" };
+    await sendCalendarMoveMail(id, { startsAt: new Date("2030-01-06T15:00:00Z"), endsAt: new Date("2030-01-06T15:30:00Z") });
     expect(state.sent).toHaveLength(1);
     expect(state.tokens).toHaveLength(1);
   });
