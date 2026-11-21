@@ -194,3 +194,20 @@ export function sendCancelMails(bookingId: string, { by, reason, token, notifyHo
     return out;
   });
 }
+
+// A reminder from a scheduler job. send_key "<step>:<booking id>:<planned start>": after a reschedule the reminder goes
+// out again for the new time, never twice for one time. Each reminder carries a fresh booking_tokens row for its links,
+// made only when no mail with this key exists yet. Throws, so the job is retried; a failed delivery is sendMail's retry.
+export async function sendReminderMail(bookingId: string, { stepKey, plannedFor, sendUntil }: { stepKey: string; plannedFor: Date; sendUntil: Date }) {
+  const sendKey = `${stepKey}:${bookingId}:${plannedFor.toISOString()}`;
+  const db = createAdminSupabase();
+  const { data: existing, error: readError } = await db.from("outbound_mails").select("id").eq("send_key", sendKey).maybeSingle();
+  if (readError) throw readError;
+  if (existing) return "duplicate";
+  const b = await loadBooking(bookingId);
+  const m = mails(b);
+  const token = newToken();
+  const { error } = await db.from("booking_tokens").insert({ token_hash: hashToken(token), booking_id: b.id });
+  if (error) throw error;
+  return sendMail(m.invitee(sendKey, t(m.locale, "mail.reminder.subject", m.short), [[t(m.locale, "mail.reminder.intro")], m.facts(), m.changeLinks(token)], sendUntil));
+}

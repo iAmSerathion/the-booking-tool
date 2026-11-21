@@ -115,5 +115,7 @@
   "mail.rescheduledHost.intro": "{invitee} hat den Termin auf eine neue Zeit verschoben.",
   "mail.cancelledHost.subject": "Abgesagt: {invitee}, {when}",
   "mail.cancelledHost.intro": "{invitee} hat den Termin abgesagt.",
-  "mail.cancelledHost.introByAdmin": "Der Termin mit {invitee} wurde von einem Admin abgesagt."
+  "mail.cancelledHost.introByAdmin": "Der Termin mit {invitee} wurde von einem Admin abgesagt.",
+  "mail.reminder.subject": "Erinnerung: {event} mit {host}",
+  "mail.reminder.intro": "eine Erinnerung an deinen nächsten Termin."
 }

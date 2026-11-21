@@ -115,5 +115,7 @@
   "mail.rescheduledHost.intro": "{invitee} moved the booking to a new time.",
   "mail.cancelledHost.subject": "Cancelled: {invitee}, {when}",
   "mail.cancelledHost.intro": "{invitee} cancelled the booking.",
-  "mail.cancelledHost.introByAdmin": "The booking with {invitee} was cancelled by an admin."
+  "mail.cancelledHost.introByAdmin": "The booking with {invitee} was cancelled by an admin.",
+  "mail.reminder.subject": "Reminder: {event} with {host}",
+  "mail.reminder.intro": "a reminder of your upcoming booking."
 }

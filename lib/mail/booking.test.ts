@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // What each booking mail says, to whom, with which send_key and send_until; the booking row and sendMail are stubbed.
 
-const state = vi.hoisted(() => ({ sent: [] as Record<string, unknown>[], tokens: [] as Record<string, unknown>[], row: {} as Record<string, unknown> }));
+const state = vi.hoisted(() => ({ sent: [] as Record<string, unknown>[], tokens: [] as Record<string, unknown>[], row: {} as Record<string, unknown>, existing: null as unknown }));
 
 vi.mock("@/lib/config", () => ({ getConfig: () => ({ appUrl: "https://book.example.com", locale: "en", brand: { name: "Acme Bookings" } }) }));
 vi.mock("./send", () => ({ sendMail: async (mail: Record<string, unknown>) => (state.sent.push(mail), "sent") }));
@@ -11,17 +11,20 @@ vi.mock("@/lib/db/admin", () => ({
     from: (table: string) =>
       table === "bookings"
         ? { select: () => ({ eq: () => ({ single: async () => ({ data: state.row, error: null }) }) }) }
-        : { insert: async (row: Record<string, unknown>) => (state.tokens.push(row), { error: null }) },
+        : table === "outbound_mails"
+          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: state.existing, error: null }) }) }) }
+          : { insert: async (row: Record<string, unknown>) => (state.tokens.push(row), { error: null }) },
   }),
 }));
 
-const { sendCancelMails, sendConfirmationMails, sendRescheduleMails } = await import("./booking");
+const { sendCancelMails, sendConfirmationMails, sendReminderMail, sendRescheduleMails } = await import("./booking");
 const { hashToken } = await import("@/lib/booking/token");
 
 const id = "00000000-0000-4000-8000-000000000001";
 beforeEach(() => {
   state.sent = [];
   state.tokens = [];
+  state.existing = null;
   state.row = {
     id,
     starts_at: "2030-01-07T09:00:00Z",
@@ -107,5 +110,23 @@ describe("booking mails", () => {
   it("tell the host when an admin cancelled their booking", async () => {
     await sendCancelMails(id, { by: "admin", reason: null, notifyHost: true });
     expect(byKey(`cancelled_host:${id}`).text).toContain("The booking with Ada <b>Example</b> was cancelled by an admin.");
+  });
+
+  it("remind the invitee once per planned start, with links from a fresh token", async () => {
+    const plannedFor = new Date("2030-01-07T09:00:00Z");
+    const sendUntil = new Date("2030-01-07T08:00:00Z");
+    expect(await sendReminderMail(id, { stepKey: "reminder_1440m", plannedFor, sendUntil })).toBe("sent");
+    const [mail] = state.sent;
+    expect(mail).toMatchObject({ sendKey: `reminder_1440m:${id}:2030-01-07T09:00:00.000Z`, to: "ada@example.com", replyTo: "riley@example.com", sendUntil });
+    expect(mail.subject).toBe("Reminder: Intro call with Riley Host");
+    expect(mail.text).toContain("a reminder of your upcoming booking.");
+    const token = (mail.text as string).match(/reschedule\/([\w-]+)/)![1];
+    expect(state.tokens).toEqual([{ token_hash: hashToken(token), booking_id: id }]);
+
+    // A second run for the same start makes no token and no mail.
+    state.existing = { id: "row" };
+    expect(await sendReminderMail(id, { stepKey: "reminder_1440m", plannedFor, sendUntil })).toBe("duplicate");
+    expect(state.sent).toHaveLength(1);
+    expect(state.tokens).toHaveLength(1);
   });
 });
