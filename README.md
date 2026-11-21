@@ -105,6 +105,12 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 - An invite creates the account and profile; no mail is sent, so the admin tells the person to sign in at
   `<APP_URL>/login`. Invited members get in whatever `ALLOWED_GOOGLE_DOMAINS` says; with `GOOGLE_HOSTED_DOMAIN` set,
   only emails of that domain can be invited. New members start not bookable until they connect a calendar.
+- Deactivating a member hands everything to a successor: their upcoming bookings get new events in the successor's
+  calendar (invitees get a new invitation with a new confirmation link, and the old event is cancelled), their widgets
+  and website bookings move, and their Google connection is revoked and removed. The successor must be bookable with
+  a connected calendar when there is anything to take over. If Google or the database refuses, the new events are
+  deleted again and nothing changes. Deactivated members cannot sign in and their booking page is gone; reactivating
+  them gives nothing back.
 
 ## Checks
 
