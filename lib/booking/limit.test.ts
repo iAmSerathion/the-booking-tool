@@ -15,7 +15,7 @@ vi.mock("@/lib/db/admin", () => ({
   }),
 }));
 vi.mock("@/lib/config", () => ({ getConfig: () => ({ trustProxyHeaders: state.trust, bookingAttemptsPerMinute: 3, schedulerSecret: "s".repeat(32) }) }));
-const { clientAddress, limitBuckets, withinLimit } = await import("./limit");
+const { clientAddress, limitBuckets, withinBookingLimit, withinLimit } = await import("./limit");
 
 describe("clientAddress", () => {
   const forwarded = new Headers({ "x-forwarded-for": "198.51.100.1, 203.0.113.7", "x-real-ip": "198.51.100.9" });
@@ -78,5 +78,29 @@ describe("withinLimit without a trusted proxy", () => {
     expect(await withinLimit("another@example.com")).toBe(true);
     state.fail = true;
     expect(await withinLimit("x@example.com")).toBe(false);
+  });
+});
+
+describe("withinBookingLimit", () => {
+  beforeEach(() => {
+    state.counts.clear();
+    state.fail = false;
+    state.headers = new Headers();
+    state.trust = false;
+  });
+
+  it("is not blocked when someone fills the invitee's email bucket and the global bucket through bookSlot", async () => {
+    while (await withinLimit("victim@example.com"));
+    for (let i = 0; i < 100; i++) await withinLimit(`flood${i}@example.com`);
+    expect(await withinLimit("someone@example.com")).toBe(false);
+    expect(await withinBookingLimit("booking-1")).toBe(true);
+  });
+
+  it("caps each booking on its own, and fails closed on a database error", async () => {
+    for (let i = 0; i < 3; i++) expect(await withinBookingLimit("booking-1")).toBe(true);
+    expect(await withinBookingLimit("booking-1")).toBe(false);
+    expect(await withinBookingLimit("booking-2")).toBe(true);
+    state.fail = true;
+    expect(await withinBookingLimit("booking-3")).toBe(false);
   });
 });
