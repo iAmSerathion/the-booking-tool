@@ -123,6 +123,20 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   deleted again and nothing changes. Deactivated members cannot sign in and their booking page is gone; reactivating
   them gives nothing back.
 
+## Mail
+
+- Mail goes out over SMTP (`SMTP_URL`, `smtp://` or `smtps://` with credentials in the URL) from `MAIL_FROM`. Mails to
+  the invitee reply to the host; mails to the host reply to the invitee.
+- After a booking: a confirmation to the invitee (when, what, with whom, the Meet link, and links to reschedule or
+  cancel, all from `APP_URL`) and a notice to the host with the invitee's details and answers. Google sends the
+  calendar invitation itself, so the mail carries no `.ics`. A new time and a cancellation each send one mail to both
+  sides, with "book a new time" for the invitee; a host who cancels their own booking gets no notice, an admin's cancel
+  is told to the host. The copy is in `messages/` (`mail.*`, German and English, `DEFAULT_LOCALE`).
+- Each occasion is one `outbound_mails` row with a unique `send_key`, written before the first attempt, so it goes out
+  once (at least once if SMTP accepts a mail and the "sent" update is lost). The row keeps the composed mail. A failed
+  attempt is retried with backoff (1 min, 5 min, 30 min, 2 h, 6 h) by the scheduler (`retryDueMails`), never at or after
+  the row's `send_until` (the booking's start for most mails); then it is marked failed.
+
 ## Checks
 
 ```bash
@@ -135,7 +149,8 @@ npm run test:db     # database tests against it
 npm run db:lint     # plpgsql_check on the local test database (CI: supabase db lint)
 ```
 
-The e2e tests start three servers: the production build on `127.0.0.1:3100`, a Google fake on `127.0.0.1:3999`
+The e2e tests start four servers: the production build on `127.0.0.1:3100`, an SMTP sink (`tests/e2e/smtp-sink.mjs`,
+test-only) that takes the app's mail on `127.0.0.1:2525` and hands it to tests on `127.0.0.1:2526`, a Google fake on `127.0.0.1:3999`
 (`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host) and a
 widget host page (`tests/e2e/embed-site.mjs`, test-only) on `127.0.0.1:3101` as the allowed origin and `127.0.0.1:3102`
 as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two ports. The
