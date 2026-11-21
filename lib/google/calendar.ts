@@ -1,4 +1,5 @@
 import type { CalendarEvent } from "@/lib/core/availability";
+import type { GoogleEvent } from "@/lib/core/calendar-sync";
 import { GoogleError, googleUrls } from "./oauth";
 
 // Google Calendar v3: the calendar list, free/busy, the events of extra busy calendars, and creating, moving and deleting
@@ -201,4 +202,63 @@ export async function moveEvent(accessToken: string, calendarId: string, eventId
     const data = (await response.json().catch(() => ({}))) as EventResponse;
     throw new GoogleError(data.error?.status ?? "event_patch", response.status);
   }
+}
+
+// Calendar sync and push channels ---------------------------------------------------------------------------------------
+
+export type EventChanges = { events: GoogleEvent[]; nextSyncToken: string };
+
+// Events changed since the last sync (syncToken), deleted ones included. Without a token: a full sync of events ending
+// after `from`, which also gives the token for next time. showDeleted on both, since Google wants the same parameters
+// apart from the time filter, and never timeMin together with a syncToken. A token Google no longer accepts (410)
+// throws "sync_token_gone"; the caller then starts over without one.
+export async function listEventChanges(accessToken: string, calendarId: string, p: { syncToken: string | null; from: Date }): Promise<EventChanges> {
+  const events: GoogleEvent[] = [];
+  let pageToken: string | undefined;
+  for (;;) {
+    const params = new URLSearchParams({ maxResults: "250", showDeleted: "true", ...(pageToken ? { pageToken } : {}) });
+    if (p.syncToken) params.set("syncToken", p.syncToken);
+    else params.set("timeMin", p.from.toISOString());
+    const response = await fetch(`${eventsUrl(calendarId)}?${params}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+    if (response.status === 410) throw new GoogleError("sync_token_gone", 410);
+    const data = (await response.json().catch(() => ({}))) as { items?: GoogleEvent[]; nextPageToken?: string; nextSyncToken?: string; error?: { status?: string } };
+    if (!response.ok) throw new GoogleError(data.error?.status ?? "events_list", response.status);
+    events.push(...(data.items ?? []));
+    if (data.nextPageToken) {
+      pageToken = data.nextPageToken;
+      continue;
+    }
+    if (!data.nextSyncToken) throw new GoogleError("no_sync_token", response.status);
+    return { events, nextSyncToken: data.nextSyncToken };
+  }
+}
+
+// A push channel (events.watch): Google POSTs to `address` on every change in the calendar, with the channel id and
+// `token` in the headers.
+export async function watchEvents(
+  accessToken: string,
+  calendarId: string,
+  channel: { id: string; token: string; address: string; ttlSeconds: number },
+): Promise<{ resourceId: string; expiresAt: Date }> {
+  const response = await fetch(`${eventsUrl(calendarId)}/watch`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ id: channel.id, type: "web_hook", address: channel.address, token: channel.token, params: { ttl: String(channel.ttlSeconds) } }),
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => ({}))) as { resourceId?: string; expiration?: string; error?: { status?: string } };
+  if (!response.ok || !data.resourceId) throw new GoogleError(data.error?.status ?? "events_watch", response.status);
+  const expiresAt = data.expiration ? new Date(Number(data.expiration)) : new Date(Date.now() + channel.ttlSeconds * 1000);
+  return { resourceId: data.resourceId, expiresAt };
+}
+
+// Stops a push channel. Already stopped or unknown (404) counts as done.
+export async function stopChannel(accessToken: string, channel: { id: string; resourceId: string }): Promise<void> {
+  const response = await fetch(`${googleUrls.calendar()}/channels/stop`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ id: channel.id, resourceId: channel.resourceId }),
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 404) throw new GoogleError("channel_stop", response.status);
 }
