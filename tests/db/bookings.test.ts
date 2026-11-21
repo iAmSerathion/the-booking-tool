@@ -408,6 +408,91 @@ describe("create_booking", () => {
       // The host check under the host lock comes before the link check.
       expect((await sqlError(client, createSql, [holdId, viaLink(at(16), at(16, 30), reusable)])).code).toBe("P0002");
     }));
+
+  it("books through a widget only while it is on, with its event type and one of its people", () =>
+    rollback(async (client) => {
+      const { host, admin, eventType } = await team(client);
+      const otherType = await scalar<string>(
+        client,
+        "insert into public.event_types (slug, title, duration_minutes) values ('intro', 'Intro', 30) returning id",
+      );
+      const widget = await scalar<string>(
+        client,
+        "insert into public.booking_widgets (name, mode, event_type_id) values ('W', 'round_robin', $1) returning id",
+        [eventType],
+      );
+      await client.query("insert into public.booking_widget_hosts (widget_id, user_id) values ($1, $2), ($1, $3)", [widget, host, admin]);
+      await actAs(client, "service_role");
+      const asPostgres = async (sql: string, params: unknown[]) => {
+        await client.query("reset role");
+        await client.query(sql, params);
+        await actAs(client, "service_role");
+      };
+      const viaWidget = (h: string, hour: number, extra: Record<string, unknown> = {}) =>
+        bookingJson({ host: h, eventType, starts: at(hour), ends: at(hour, 30), booked_via: "widget", widget_id: widget, ...extra });
+      const refused = async (h: string, hour: number, extra: Record<string, unknown> = {}) => {
+        const holdId = await hold(client, h, at(hour), at(hour, 30));
+        return (await sqlError(client, createSql, [holdId, viaWidget(h, hour, extra)])).code;
+      };
+
+      const first = await book(client, { host, eventType, starts: at(9), ends: at(9, 30), booked_via: "widget", widget_id: widget });
+      expect(await scalar(client, "select widget_id from public.bookings where id = $1", [first])).toBe(widget);
+
+      // Another event type than the widget's, a widget booking without a widget, an unknown widget.
+      expect(await refused(host, 10, { event_type_id: otherType })).toBe("P0005");
+      expect(await refused(host, 11, { widget_id: null })).toBe("P0005");
+      expect(await refused(host, 12, { widget_id: crypto.randomUUID() })).toBe("P0005");
+
+      // A host removed from the widget; the other person still takes bookings.
+      await asPostgres("delete from public.booking_widget_hosts where widget_id = $1 and user_id = $2", [widget, host]);
+      expect(await refused(host, 13)).toBe("P0005");
+      await book(client, { host: admin, eventType, starts: at(13), ends: at(13, 30), booked_via: "widget", widget_id: widget });
+
+      // A widget switched off takes nothing; its people are still bookable on other channels.
+      await asPostgres("update public.booking_widgets set active = false where id = $1", [widget]);
+      expect(await refused(admin, 14)).toBe("P0005");
+      // The failed call kept the hold, so the server can release it.
+      expect(await scalar(client, "select count(*)::int from public.slot_holds where host_id = $1 and starts_at = $2", [admin, at(14)])).toBe(1);
+      await book(client, { host: admin, eventType, starts: at(15), ends: at(15, 30) });
+    }));
+
+  it("waits for a widget being switched off and then refuses the booking", async () => {
+    const setup = await pool.connect();
+    const a = await pool.connect();
+    const b = await pool.connect();
+    let host = "";
+    let widget = "";
+    try {
+      host = await addProfile(setup, "widget-race@example.com");
+      const eventType = await defaultEventType(setup);
+      widget = await scalar<string>(setup, "insert into public.booking_widgets (name, event_type_id) values ('Race', $1) returning id", [eventType]);
+      await setup.query("insert into public.booking_widget_hosts (widget_id, user_id) values ($1, $2)", [widget, host]);
+
+      await a.query("begin");
+      await a.query("update public.booking_widgets set active = false where id = $1", [widget]);
+
+      await b.query("begin");
+      await actAs(b, "service_role");
+      const holdId = await hold(b, host, at(10), at(10, 30));
+      const pidB = await scalar<number>(b, "select pg_backend_pid()");
+      const booking = sqlError(b, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30), booked_via: "widget", widget_id: widget })]);
+      // b waits on the widget row lock until a commits.
+      await expect
+        .poll(() => scalar<boolean>(setup, "select wait_event_type = 'Lock' from pg_stat_activity where pid = $1", [pidB]), { timeout: 5_000 })
+        .toBe(true);
+      await a.query("commit");
+      expect((await booking).code).toBe("P0005");
+      await b.query("rollback");
+    } finally {
+      await a.query("rollback").catch(() => {});
+      await b.query("rollback").catch(() => {});
+      if (widget) await setup.query("delete from public.booking_widgets where id = $1", [widget]);
+      if (host) await removeProfile(setup, host);
+      a.release();
+      b.release();
+      setup.release();
+    }
+  });
 });
 
 describe("booking_event_payload", () => {

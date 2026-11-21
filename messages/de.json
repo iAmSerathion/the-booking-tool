@@ -77,5 +77,10 @@
   "cancel.keep": "Termin behalten",
   "link.title": "Termin buchen",
   "link.closed": "Dieser Link kann nicht mehr verwendet werden",
-  "link.closedBody": "Er wurde vielleicht schon benutzt, ist abgelaufen oder wurde zurückgezogen. Bitte frag nach einem neuen Link."
+  "link.closedBody": "Er wurde vielleicht schon benutzt, ist abgelaufen oder wurde zurückgezogen. Bitte frag nach einem neuen Link.",
+  "booking.error.widgetClosed": "Eine Buchung ist hier gerade nicht möglich.",
+  "widget.close": "Schließen",
+  "widget.title": "Termin buchen",
+  "widget.closed": "Eine Buchung ist hier gerade nicht möglich",
+  "widget.closedBody": "Dieses Buchungsformular ist ausgeschaltet. Bitte versuch es später noch einmal oder melde dich auf anderem Weg."
 }

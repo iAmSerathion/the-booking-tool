@@ -8,6 +8,7 @@ import { getConfig } from "@/lib/config";
 import { cleanBookingInput, eventSummary, looksLikeBot, roundRobinOrder, validateBooking } from "@/lib/core/booking";
 import { addDays, dayStart, safeTimeZone, zonedDay } from "@/lib/core/dates";
 import { validateAnswers } from "@/lib/core/questions";
+import { readWidgetBookingPage, widgetConfirmationPath } from "@/lib/core/widget";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
@@ -33,6 +34,8 @@ export type BookingForm = {
   timeZone?: unknown;
   honeypot?: unknown;
   startedAt?: unknown;
+  // Widgets: the host page the booking came from (origin and path), checked against the widget's origins.
+  bookingPage?: unknown;
 };
 
 export type BookingResult = {
@@ -56,9 +59,9 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     console.error("booking: context", cause);
     return null;
   });
-  // Gone meanwhile (event type switched off, member no longer bookable, link used up, expired or revoked) or the database
-  // failed.
-  if (!context) return { ok: false, error: ref.kind === "link" ? "booking.error.linkInvalid" : "booking.error.failed" };
+  // Gone meanwhile (event type switched off, member no longer bookable, link used up, expired or revoked, widget switched
+  // off) or the database failed.
+  if (!context) return { ok: false, error: ref.kind === "link" ? "booking.error.linkInvalid" : ref.kind === "widget" ? "booking.error.widgetClosed" : "booking.error.failed" };
   if (context.hosts.length === 0) return { ok: false, error: "booking.error.taken", slots: [] };
 
   const input = cleanBookingInput(form);
@@ -167,6 +170,8 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
         booked_via: context.via,
         // Re-derived from the token on the server; create_booking checks the link again under its row lock.
         link_id: context.linkId ?? null,
+        widget_id: context.widgetId ?? null,
+        booking_page: context.widgetId ? readWidgetBookingPage(form.bookingPage, context.embedOrigins ?? []) : null,
         invitee_name: input.name,
         invitee_email: input.email,
         invitee_company: input.company,
@@ -186,6 +191,8 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
       await release();
       if (error.code === "P0003") return { ok: false, error: "booking.error.failed" };
       if (error.code === "P0004") return { ok: false, error: "booking.error.linkInvalid" };
+      // The widget was switched off, lost this host or changed its event type after the page loaded.
+      if (error.code === "P0005") return { ok: false, error: "booking.error.widgetClosed" };
       if (error.code === "P0002") return taken();
       console.error("booking: create_booking", error);
       return { ok: false, error: "booking.error.failed" };
@@ -195,7 +202,8 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     updateTag(busyCacheTag(hostId));
     // M8 seams: plan the booking's jobs and send the confirmation mail here (after()). M9 delivers the outbox row that
     // create_booking already wrote.
-    redirect(`/confirmed/${token}?new=1`);
+    // Widget bookings stay inside the frame: /confirmed sends frame-ancestors 'none'.
+    redirect(ref.kind === "widget" ? widgetConfirmationPath(ref.id, ref.view, token, true) : `/confirmed/${token}?new=1`);
   }
 
   // Every free host's hold failed (someone else was faster) or their Google access broke meanwhile.

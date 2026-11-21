@@ -224,6 +224,7 @@ describe("bookSlot", () => {
       token_hash: hashToken(token),
       check_upcoming: true,
       link_id: null,
+      widget_id: null,
     });
     expect(called("updateTag")[0][1]).toBe("google-busy-h2");
   });
@@ -237,6 +238,44 @@ describe("bookSlot", () => {
   it("answers a link that closed after the page loaded with linkInvalid, before any hold", async () => {
     state.context = null;
     expect(await bookSlot({ kind: "link", token: "a".repeat(43) }, form())).toEqual({ ok: false, error: "booking.error.linkInvalid" });
+    expect(names()).toEqual(["limit"]);
+  });
+
+  it("books through a widget with the widget id from the server-side context and stays inside the frame", async () => {
+    const id = "00000000-0000-4000-8000-000000000201";
+    state.context = { ...context, via: "widget", widgetId: id };
+    for (const view of ["window", "section"] as const) {
+      state.calls = [];
+      await expect(bookSlot({ kind: "widget", id, view }, form({ widget_id: "forged", widgetId: "forged" }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booked_via: "widget", widget_id: id, link_id: null } });
+      const path = view === "section" ? `/widget/${id}/section` : `/widget/${id}`;
+      expect(called("redirect")[0][1]).toMatch(new RegExp(`^${path}/confirmed/[A-Za-z0-9_-]{43}\\?new=1$`));
+    }
+  });
+
+  it("stores a widget's booking page only from one of the widget's origins, and never for other channels", async () => {
+    const id = "00000000-0000-4000-8000-000000000201";
+    state.context = { ...context, via: "widget", widgetId: id, embedOrigins: ["https://example.com"] };
+    const cases: [unknown, string | null][] = [
+      ["https://example.com/pricing", "https://example.com/pricing"],
+      ["https://evil.example/pricing", null],
+      ["https://example.com/pricing?x=1", null],
+      [42, null],
+    ];
+    for (const [bookingPage, stored] of cases) {
+      state.calls = [];
+      await expect(bookSlot({ kind: "widget", id, view: "section" }, form({ bookingPage }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booking_page: stored } });
+    }
+    state.context = context;
+    state.calls = [];
+    await expect(bookSlot({ kind: "person", slug: "ada" }, form({ bookingPage: "https://example.com/pricing" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booking_page: null } });
+  });
+
+  it("answers a widget switched off after the page loaded with widgetClosed, before any hold", async () => {
+    state.context = null;
+    expect(await bookSlot({ kind: "widget", id: "00000000-0000-4000-8000-000000000201", view: "window" }, form())).toEqual({ ok: false, error: "booking.error.widgetClosed" });
     expect(names()).toEqual(["limit"]);
   });
 
@@ -359,6 +398,7 @@ describe("bookSlot", () => {
     ["P0002", { ok: false, error: "booking.error.taken", slots: [{ start: later, end: "2026-11-04T13:30:00.000Z" }] }],
     ["P0003", { ok: false, error: "booking.error.failed" }],
     ["P0004", { ok: false, error: "booking.error.linkInvalid" }],
+    ["P0005", { ok: false, error: "booking.error.widgetClosed" }],
     ["XX000", { ok: false, error: "booking.error.failed" }],
   ])("rolls back the event quietly and releases the hold when create_booking fails with %s", async (code, result) => {
     state.createBooking = [{ code, message: "no" }];

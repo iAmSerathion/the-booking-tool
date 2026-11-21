@@ -1,10 +1,18 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 import { getConfig } from "@/lib/config";
+import { widgetFrameAncestors } from "@/lib/core/widget";
+import { loadWidget } from "@/lib/widget/data";
 
 // Runs before every /app page: refreshes the Supabase session cookies (Server Components cannot) and sends visitors
 // without a session, or without an active profile, to /login. Security headers still come from next.config.ts.
+// Widget pages only get their frame-ancestors here: no session, no cookies, no redirect for anonymous visitors.
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  if (pathname.startsWith("/widget/")) return widgetHeaders(request);
+  // next.config.ts skips its static deny for "widget/" case-insensitively; case variants (/WIDGET/...) are no widget
+  // page, so they get the deny pair here.
+  if (/^\/widget\//i.test(pathname)) return frameDeny();
   let config;
   try {
     config = getConfig();
@@ -48,4 +56,30 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-export const config = { matcher: ["/app", "/app/:path*"] };
+// Layouts cannot set response headers, so the per-widget CSP is set here, from the widget row on every request: changes
+// to its origins or active flag apply at once. next.config.ts sends the static deny for every other path. Fails closed:
+// a bad id, an unknown or inactive widget, a config or database error all give 'none', never a missing header or "*".
+// No X-Frame-Options here: it cannot express a list of origins.
+async function widgetHeaders(request: NextRequest) {
+  let value = "'none'";
+  try {
+    const config = getConfig();
+    const widget = await loadWidget(request.nextUrl.pathname.split("/")[2] ?? "");
+    value = widgetFrameAncestors(widget, config.embedAllowedOrigins, config.appUrl);
+  } catch (cause) {
+    console.error("widget: frame-ancestors", cause);
+  }
+  const response = NextResponse.next();
+  response.headers.set("Content-Security-Policy", `frame-ancestors ${value}`);
+  return response;
+}
+
+function frameDeny() {
+  const response = NextResponse.next();
+  response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
+  response.headers.set("X-Frame-Options", "DENY");
+  return response;
+}
+
+// The matcher is case-sensitive, so the case variants of /widget/ need their own entry (see frameDeny).
+export const config = { matcher: ["/app", "/app/:path*", "/widget/:path*", "/:w([wW][iI][dD][gG][eE][tT])/:path+"] };

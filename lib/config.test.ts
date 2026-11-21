@@ -131,6 +131,24 @@ describe("APP_URL", () => {
   });
 });
 
+describe("EMBED_ALLOWED_ORIGINS", () => {
+  it("is empty by default and normalizes listed origins", () => {
+    expect(parseConfig(valid).embedAllowedOrigins).toEqual([]);
+    expect(parseConfig({ ...valid, EMBED_ALLOWED_ORIGINS: " https://WWW.example.com/ , http://127.0.0.1:3101,https://www.example.com" }).embedAllowedOrigins).toEqual([
+      "https://www.example.com",
+      "http://127.0.0.1:3101",
+    ]);
+  });
+
+  it("rejects anything that is not an embeddable origin", () => {
+    for (const bad of ["*", "https://example.com/path", "http://example.com", "https://example.com; script-src *"]) {
+      expect(problems({ ...valid, EMBED_ALLOWED_ORIGINS: bad })).toEqual([expect.stringMatching(/^EMBED_ALLOWED_ORIGINS must be/)]);
+    }
+    const many = Array.from({ length: 21 }, (_, i) => `https://s${i}.example.com`).join(",");
+    expect(problems({ ...valid, EMBED_ALLOWED_ORIGINS: many })).toHaveLength(1);
+  });
+});
+
 it("stores the canonical time zone name", () => {
   expect(parseConfig({ ...valid, DEFAULT_TIMEZONE: "europe/berlin" }).timeZone).toBe("Europe/Berlin");
 });
