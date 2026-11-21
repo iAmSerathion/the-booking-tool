@@ -301,6 +301,35 @@ describe("deactivate_profile", () => {
       });
     }));
 
+  it("leaves the link metadata of a handed-over booking readable for the successor through booking_link_metadata", () =>
+    rollback(async (client) => {
+      const { admin, member, successor, retiredAdmin } = await team(client);
+      const other = await addProfile(client, "other@example.com");
+      const booking = await addBooking(client, member, inDays(3));
+      await client.query(
+        `with l as (
+           insert into public.booking_links (token_hash, host_id, event_type_id, metadata)
+           select repeat('a', 64), host_id, event_type_id, '{"campaign": "spring"}' from public.bookings where id = $1
+           returning id)
+         update public.bookings set link_id = (select id from l) where id = $1`,
+        [booking],
+      );
+      await as(client, "service_role", undefined, () => client.query(deactivateSql, [member, successor, admin, plan({ id: booking })]));
+
+      const metadataSql = "select booking_id, metadata from public.booking_link_metadata($1)";
+      for (const viewer of [successor, admin]) {
+        await as(client, "authenticated", viewer, async () => {
+          // The link itself stays with the deactivated member, so the successor cannot read it directly.
+          if (viewer === successor) expect((await client.query("select id from public.booking_links")).rows).toEqual([]);
+          expect((await client.query(metadataSql, [[booking]])).rows).toEqual([{ booking_id: booking, metadata: { campaign: "spring" } }]);
+        });
+      }
+      for (const viewer of [other, retiredAdmin, member]) {
+        await as(client, "authenticated", viewer, async () => expect((await client.query(metadataSql, [[booking]])).rows, viewer).toEqual([]));
+      }
+      await as(client, "anon", undefined, async () => expect((await sqlError(client, metadataSql, [[booking]])).code).toBe("42501"));
+    }));
+
   it("refuses bad successors, self, an inactive member and a stale or incomplete plan", () =>
     rollback(async (client) => {
       const { admin, member, successor, retiredAdmin } = await team(client);
