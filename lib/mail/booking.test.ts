@@ -12,7 +12,7 @@ vi.mock("@/lib/db/admin", () => ({
       table === "bookings"
         ? { select: () => ({ eq: () => ({ single: async () => ({ data: state.row, error: null }) }) }) }
         : table === "outbound_mails"
-          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: state.existing, error: null }) }) }) }
+          ? { select: () => ({ eq: (_: string, key: string) => ({ maybeSingle: async () => ({ data: state.existing ?? (state.sent.some((m) => m.sendKey === key) ? { id: "row" } : null), error: null }) }) }) }
           : { insert: async (row: Record<string, unknown>) => (state.tokens.push(row), { error: null }) },
   }),
 }));
@@ -147,7 +147,7 @@ describe("booking mails", () => {
   it("tell the invitee once about a move the host made in the calendar, with the time before and fresh links", async () => {
     await sendCalendarMoveMail(id, { startsAt: new Date("2030-01-06T15:00:00Z"), endsAt: new Date("2030-01-06T15:30:00Z") });
     const [mail] = state.sent;
-    expect(mail).toMatchObject({ sendKey: `calendar_moved:${id}:2030-01-07T09:00:00.000Z`, to: "ada@example.com", replyTo: "riley@example.com" });
+    expect(mail).toMatchObject({ sendKey: `calendar_moved:${id}:2030-01-06T15:00:00.000Z:2030-01-07T09:00:00.000Z`, to: "ada@example.com", replyTo: "riley@example.com" });
     expect(mail.sendUntil).toEqual(new Date("2030-01-07T09:00:00Z"));
     expect(mail.subject).toBe("New time: Intro call with Riley Host");
     expect(mail.text).toContain("Riley Host moved your booking to a new time.");
@@ -159,5 +159,22 @@ describe("booking mails", () => {
     await sendCalendarMoveMail(id, { startsAt: new Date("2030-01-06T15:00:00Z"), endsAt: new Date("2030-01-06T15:30:00Z") });
     expect(state.sent).toHaveLength(1);
     expect(state.tokens).toHaveLength(1);
+  });
+
+  it("tell the invitee again when the host moves the booking back to a time it had before", async () => {
+    const at = (iso: string) => ({ startsAt: new Date(iso), endsAt: new Date(new Date(iso).getTime() + 30 * 60_000) });
+    const [a, b, c] = [at("2030-01-07T09:00:00Z"), at("2030-01-08T09:00:00Z"), at("2030-01-09T09:00:00Z")];
+    for (const [from, to] of [[a, b], [b, c], [c, b]]) {
+      state.row = { ...state.row, starts_at: to.startsAt.toISOString(), ends_at: to.endsAt.toISOString() };
+      await sendCalendarMoveMail(id, from);
+    }
+    expect(state.sent.map((m) => m.sendKey)).toEqual([
+      `calendar_moved:${id}:2030-01-07T09:00:00.000Z:2030-01-08T09:00:00.000Z`,
+      `calendar_moved:${id}:2030-01-08T09:00:00.000Z:2030-01-09T09:00:00.000Z`,
+      `calendar_moved:${id}:2030-01-09T09:00:00.000Z:2030-01-08T09:00:00.000Z`,
+    ]);
+    // A deferred sync seeing the last move again stays quiet.
+    await sendCalendarMoveMail(id, c);
+    expect(state.sent).toHaveLength(3);
   });
 });
