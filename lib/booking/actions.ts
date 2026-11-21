@@ -8,7 +8,7 @@ import { getConfig } from "@/lib/config";
 import { cleanBookingInput, eventSummary, looksLikeBot, roundRobinOrder, validateBooking } from "@/lib/core/booking";
 import { addDays, dayStart, safeTimeZone, zonedDay } from "@/lib/core/dates";
 import { validateAnswers } from "@/lib/core/questions";
-import { widgetConfirmationPath } from "@/lib/core/widget";
+import { readWidgetBookingPage, widgetConfirmationPath } from "@/lib/core/widget";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
@@ -34,6 +34,8 @@ export type BookingForm = {
   timeZone?: unknown;
   honeypot?: unknown;
   startedAt?: unknown;
+  // Widgets: the host page the booking came from (origin and path), checked against the widget's origins.
+  bookingPage?: unknown;
 };
 
 export type BookingResult = {
@@ -169,6 +171,7 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
         // Re-derived from the token on the server; create_booking checks the link again under its row lock.
         link_id: context.linkId ?? null,
         widget_id: context.widgetId ?? null,
+        booking_page: context.widgetId ? readWidgetBookingPage(form.bookingPage, context.embedOrigins ?? []) : null,
         invitee_name: input.name,
         invitee_email: input.email,
         invitee_company: input.company,

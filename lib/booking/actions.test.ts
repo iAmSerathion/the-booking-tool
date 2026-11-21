@@ -253,6 +253,26 @@ describe("bookSlot", () => {
     }
   });
 
+  it("stores a widget's booking page only from one of the widget's origins, and never for other channels", async () => {
+    const id = "00000000-0000-4000-8000-000000000201";
+    state.context = { ...context, via: "widget", widgetId: id, embedOrigins: ["https://example.com"] };
+    const cases: [unknown, string | null][] = [
+      ["https://example.com/pricing", "https://example.com/pricing"],
+      ["https://evil.example/pricing", null],
+      ["https://example.com/pricing?x=1", null],
+      [42, null],
+    ];
+    for (const [bookingPage, stored] of cases) {
+      state.calls = [];
+      await expect(bookSlot({ kind: "widget", id, view: "section" }, form({ bookingPage }))).rejects.toThrow("NEXT_REDIRECT");
+      expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booking_page: stored } });
+    }
+    state.context = context;
+    state.calls = [];
+    await expect(bookSlot({ kind: "person", slug: "ada" }, form({ bookingPage: "https://example.com/pricing" }))).rejects.toThrow("NEXT_REDIRECT");
+    expect(called("create_booking")[0][1]).toMatchObject({ p_booking: { booking_page: null } });
+  });
+
   it("answers a widget switched off after the page loaded with widgetClosed, before any hold", async () => {
     state.context = null;
     expect(await bookSlot({ kind: "widget", id: "00000000-0000-4000-8000-000000000201", view: "window" }, form())).toEqual({ ok: false, error: "booking.error.widgetClosed" });
