@@ -96,6 +96,16 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
   the widget and the host page they came from.
 
+## Team
+
+- Team in the admin lists every member with their booking page. Admins make members admin or bookable, change link
+  names (the old `/<slug>` stops working; reserved words are the app's routes), invite members by their Google account
+  email, reactivate deactivated members and choose who gets bookings from `/` (one person or round robin). At least
+  one active member always stays an admin.
+- An invite creates the account and profile; no mail is sent, so the admin tells the person to sign in at
+  `<APP_URL>/login`. Invited members get in whatever `ALLOWED_GOOGLE_DOMAINS` says; with `GOOGLE_HOSTED_DOMAIN` set,
+  only emails of that domain can be invited. New members start not bookable until they connect a calendar.
+
 ## Checks
 
 ```bash
@@ -115,7 +125,8 @@ as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two
 fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
 move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
-of skipping logged-in tests. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
+of skipping logged-in tests. Specs that change the seeded admin or the website default run in their own Playwright
+projects (`team-admins`, then `bootstrap`) after all others. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
 
 ## License
 
