@@ -137,6 +137,25 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   attempt is retried with backoff (1 min, 5 min, 30 min, 2 h, 6 h) by the scheduler (`retryDueMails`), never at or after
   the row's `send_until` (the booking's start for most mails); then it is marked failed.
 
+## Reminders and the scheduler
+
+- Every booking gets reminder mails to the invitee, by default 24 hours and 1 hour before the start. Set the settings
+  row `reminder_offsets_minutes` to a JSON array of minutes (e.g. `[2880, 120]`, at most 5, up to 30 days; `[]` turns
+  reminders off). A reminder carries fresh reschedule and cancel links. A late reminder still goes out until the next
+  smaller one is due (the smallest until the start); a booking that was moved or cancelled gets none for the old time.
+- Reminders are `booking_jobs`, planned after a booking and re-planned after a reschedule; a cancel or a move cancels
+  the open ones in the database.
+- `POST /api/jobs/scheduler` runs due jobs and mail retries. Something has to call it every minute with the secret:
+
+  ```bash
+  curl -fsS -X POST -H "Authorization: Bearer $SCHEDULER_SECRET" "$APP_URL/api/jobs/scheduler"
+  ```
+
+  Any cron works (system cron, a container, your host's scheduled jobs). On Supabase you can instead run
+  `supabase/optional/scheduler_cron.sql` once (pg_cron and pg_net, secrets in Vault); it is not part of the migrations.
+- `SCHEDULER_TEST_CLOCK=true` is for the e2e tests only: the scheduler then honours `x-test-now`, scoped to one booking
+  (`x-test-booking`) or member (`x-test-user`). Config refuses it unless `APP_URL` is localhost, 127.0.0.1 or [::1].
+
 ## Checks
 
 ```bash
