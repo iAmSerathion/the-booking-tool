@@ -78,6 +78,9 @@ function mails(b: MailBooking) {
   const inviteeWhen = (start = b.startsAt, end = b.endsAt) => when(start, end, b.inviteeTimeZone, locale);
   const hostWhen = (start = b.startsAt, end = b.endsAt) => when(start, end, b.host.timeZone, locale);
   const short = { event: b.event, host: b.host.name, invitee: b.inviteeName };
+  // The only URLs that become links in the HTML: ours from APP_URL and the Meet link, never one inside invitee text.
+  const links: string[] = [];
+  const link = (url: string) => (links.push(url), url);
 
   const invitee = (kind: string, subject: string, paragraphs: Paragraph[], sendUntil: Date | null = b.startsAt) => ({
     sendKey: kind,
@@ -86,7 +89,7 @@ function mails(b: MailBooking) {
     replyTo: b.host.email,
     subject,
     sendUntil,
-    ...composeMail([[t(locale, "mail.greeting", { name: b.inviteeName })], ...paragraphs, footer]),
+    ...composeMail([[t(locale, "mail.greeting", { name: b.inviteeName })], ...paragraphs, footer], links),
   });
   const host = (kind: string, subject: string, paragraphs: Paragraph[]) => ({
     sendKey: kind,
@@ -95,7 +98,7 @@ function mails(b: MailBooking) {
     replyTo: b.inviteeEmail,
     subject,
     sendUntil: b.startsAt,
-    ...composeMail([...paragraphs, [t(locale, "mail.bookings", { link: `${appUrl}/app/bookings` })], footer]),
+    ...composeMail([...paragraphs, [t(locale, "mail.bookings", { link: link(`${appUrl}/app/bookings`) })], footer], links),
   });
 
   const facts = (before?: { startsAt: Date; endsAt: Date }): Paragraph => [
@@ -103,13 +106,13 @@ function mails(b: MailBooking) {
     t(locale, "mail.when", { when: inviteeWhen() }),
     before && t(locale, "mail.before", { when: inviteeWhen(before.startsAt, before.endsAt) }),
     t(locale, "mail.with", { host: b.host.name }),
-    b.meetUrl?.startsWith("https://") && t(locale, "mail.meet", { link: b.meetUrl }),
+    b.meetUrl?.startsWith("https://") && t(locale, "mail.meet", { link: link(b.meetUrl) }),
     // Google already invited the invitee to the event (sendUpdates=all); an .ics as well would add a second entry.
     b.googleEventId && t(locale, "mail.invitation"),
   ];
   const changeLinks = (token: string): Paragraph => [
-    t(locale, "mail.reschedule", { link: `${appUrl}/reschedule/${token}` }),
-    t(locale, "mail.cancel", { link: `${appUrl}/cancel/${token}` }),
+    t(locale, "mail.reschedule", { link: link(`${appUrl}/reschedule/${token}`) }),
+    t(locale, "mail.cancel", { link: link(`${appUrl}/cancel/${token}`) }),
   ];
   const person: Paragraph = [
     t(locale, "mail.name", { name: b.inviteeName }),
@@ -117,7 +120,7 @@ function mails(b: MailBooking) {
     b.inviteeCompany && t(locale, "mail.company", { company: b.inviteeCompany }),
     b.inviteePhone && t(locale, "mail.phone", { phone: b.inviteePhone }),
   ];
-  return { locale, appUrl, short, invitee, host, facts, changeLinks, person, inviteeWhen, hostWhen };
+  return { locale, appUrl, link, short, invitee, host, facts, changeLinks, person, inviteeWhen, hostWhen };
 }
 
 export function sendConfirmationMails(bookingId: string, token: string) {
@@ -179,7 +182,7 @@ export function sendCancelMails(bookingId: string, { by, reason, token, notifyHo
         [
           [by === "invitee" ? t(locale, "mail.cancelled.intro") : t(locale, "mail.cancelled.introByHost", m.short)],
           [t(locale, "mail.what", { event: b.event }), t(locale, "mail.when", { when: m.inviteeWhen() }), t(locale, "mail.with", { host: b.host.name }), reasonLine],
-          [t(locale, "mail.rebook", { link: `${m.appUrl}/cancel/${link}/new` })],
+          [t(locale, "mail.rebook", { link: m.link(`${m.appUrl}/cancel/${link}/new`) })],
         ],
         null,
       ),
