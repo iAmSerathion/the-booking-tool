@@ -75,3 +75,63 @@ export function validateAnswers(
   }
   return { answers, errors };
 }
+
+// The admin's question list for an event type, from the questions builder (a JSON array). Mirrors
+// event_type_questions_valid, so the admin gets a precise message instead of the database's generic one. Labels and
+// choices are cleaned, empty choices dropped, duplicates removed. A question without an id (a new one) gets one made
+// from its label; existing ids are kept, because link prefills, widget prefills and stored answers refer to them.
+export const maxQuestions = 20;
+export const maxChoices = 30;
+const labelMax = 200;
+const idPattern = /^[a-z][a-z0-9_-]{0,39}$/;
+const types = ["choice", "multi", "text"] as const;
+
+export function parseQuestions(raw: unknown): { questions: Question[] } | { error: string } {
+  if (!Array.isArray(raw)) return { error: "The questions could not be read. Please try again." };
+  if (raw.length > maxQuestions) return { error: `An event type has at most ${maxQuestions} questions.` };
+  const items = raw.map((item) => (item && typeof item === "object" && !Array.isArray(item) ? (item as Record<string, unknown>) : {}));
+  const taken = new Set<string>();
+  for (const [i, item] of items.entries()) {
+    if (item.id === undefined || item.id === "") continue;
+    if (typeof item.id !== "string" || !idPattern.test(item.id) || taken.has(item.id)) return { error: `Question ${i + 1} could not be read. Please reload the page.` };
+    taken.add(item.id);
+  }
+  const questions: Question[] = [];
+  for (const [i, item] of items.entries()) {
+    const at = `Question ${i + 1}`;
+    const label = cleanText(item.label, labelMax + 1);
+    if (!label) return { error: `${at} needs a label.` };
+    if (label.length > labelMax) return { error: `${at}: a label has at most ${labelMax} characters.` };
+    const type = types.find((t) => t === item.type);
+    if (!type) return { error: `${at}: choose a type.` };
+    const id = typeof item.id === "string" && item.id ? item.id : questionId(label, taken);
+    taken.add(id);
+    const question: Question = { id, label, type, required: item.required === true };
+    if (type !== "text") {
+      const list = Array.isArray(item.choices) ? item.choices.map((c) => cleanText(c, labelMax + 1)).filter(Boolean) : [];
+      const choices = [...new Set(list)];
+      if (choices.length === 0) return { error: `${at} needs at least one choice.` };
+      if (choices.length > maxChoices) return { error: `${at} has more than ${maxChoices} choices.` };
+      if (choices.some((c) => c.length > labelMax)) return { error: `${at}: a choice has at most ${labelMax} characters.` };
+      question.choices = choices;
+    }
+    questions.push(question);
+  }
+  return { questions };
+}
+
+// "How many people?" -> "how-many-people"; "2 people" -> "q-2-people"; a taken id gets -2, -3, ...
+export function questionId(label: string, taken: ReadonlySet<string>): string {
+  const slug = label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 30)
+    .replace(/-+$/, "");
+  const base = /^[a-z]/.test(slug) ? slug : slug ? `q-${slug}` : "q";
+  let id = base;
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`;
+  return id;
+}
