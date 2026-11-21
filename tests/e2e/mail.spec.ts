@@ -20,8 +20,9 @@ async function book(page: Page, host: Host, day: string, time: string, name: str
   await expect(heading(page)).toHaveText("Your booking is confirmed.");
 }
 
+// Sorted by send_key here: the two mails of an occasion are written concurrently, and the database collation ignores ':'.
 const outboundOf = async (bookingId: string) =>
-  (await admin().from("outbound_mails").select("send_key, kind, state, attempts, reply_to").eq("booking_id", bookingId).order("created_at")).data!;
+  (await admin().from("outbound_mails").select("send_key, state, attempts").eq("booking_id", bookingId)).data!.sort((x, y) => (x.send_key < y.send_key ? -1 : 1));
 
 test("a booking sends one confirmation and one host notice with working links; a new time and a cancel each send one mail to both sides", async ({ page, baseURL }) => {
   const host = await newHost({ name: "Morgan Host" });
@@ -79,12 +80,12 @@ test("a booking sends one confirmation and one host notice with working links; a
     expect(await mailsTo(invitee)).toHaveLength(3);
     expect(await mailsTo(host.email)).toHaveLength(3);
     expect((await outboundOf(booking.id)).map((m) => [m.send_key, m.state, m.attempts])).toEqual([
+      [`cancelled:${booking.id}`, "sent", 1],
+      [`cancelled_host:${booking.id}`, "sent", 1],
       [`confirmation:${booking.id}`, "sent", 1],
       [`host_notice:${booking.id}`, "sent", 1],
       [`rescheduled:${booking.id}:1`, "sent", 1],
       [`rescheduled_host:${booking.id}:1`, "sent", 1],
-      [`cancelled:${booking.id}`, "sent", 1],
-      [`cancelled_host:${booking.id}`, "sent", 1],
     ]);
   } finally {
     await removeHost(host.id);
@@ -116,7 +117,7 @@ test("a host who cancels their own booking: only the invitee hears, with a reboo
     await expect(page).toHaveURL(/\/l\/[\w-]+$/);
     expect(await mailsTo(host.email)).toHaveLength(1);
     const [booking] = await bookingsOf(host.id);
-    expect((await outboundOf(booking.id)).map((m) => m.send_key)).toEqual([`confirmation:${booking.id}`, `host_notice:${booking.id}`, `cancelled:${booking.id}`]);
+    expect((await outboundOf(booking.id)).map((m) => m.send_key)).toEqual([`cancelled:${booking.id}`, `confirmation:${booking.id}`, `host_notice:${booking.id}`]);
   } finally {
     await removeHost(host.id);
   }
