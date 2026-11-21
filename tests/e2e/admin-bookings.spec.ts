@@ -81,9 +81,24 @@ test("a host sees their upcoming booking with answers and metadata and cancels i
     expect((await asA.rpc("cancel_booking_as_host", { p_booking_id: bookingB.id, p_reason: null })).error?.code).toBe("42501");
     expect((await bookingsOf(hostB.id))[0].state).toBe("booked");
 
+    // Cancelling asks first: the first click only opens the confirmation, with focus in the reason field. "Keep booking"
+    // closes it again, returns focus and leaves the booking untouched.
+    const cancelA = mine.getByRole("button", { name: `Cancel booking with ${nameA}` });
+    await expect(cancelA).toHaveAttribute("aria-expanded", "false");
+    await cancelA.click();
+    await expect(cancelA).toHaveAttribute("aria-expanded", "true");
+    await expect(mine).toContainText(`Google Calendar tells ${nameA} right away that the booking is cancelled.`);
+    await expect(mine.getByLabel("Reason (optional)")).toBeFocused();
+    await mine.getByRole("button", { name: "Keep booking" }).click();
+    await expect(cancelA).toHaveAttribute("aria-expanded", "false");
+    await expect(cancelA).toBeFocused();
+    await expect(mine.getByRole("button", { name: "Yes, cancel booking" })).toHaveCount(0);
+    expect((await bookingsOf(hostA.id))[0].state).toBe("booked");
+
     // Host A cancels: gone from the list, cancelled by the host in the database and the outbox, event removed in Google.
+    await cancelA.click();
     await mine.getByLabel("Reason (optional)").fill("Host is ill");
-    await mine.getByRole("button", { name: `Cancel booking with ${nameA}` }).click();
+    await mine.getByRole("button", { name: "Yes, cancel booking" }).click();
     await expect(card(page, nameA)).toHaveCount(0);
     const { data: rowA } = await admin().from("bookings").select("state, cancelled_by").eq("id", bookingA.id).single();
     expect(rowA).toEqual({ state: "cancelled", cancelled_by: "host" });
@@ -99,6 +114,7 @@ test("a host sees their upcoming booking with answers and metadata and cancels i
     const theirs = card(adminPage, nameB);
     await expect(theirs).toContainText("Blake Host");
     await theirs.getByRole("button", { name: `Cancel booking with ${nameB}` }).click();
+    await theirs.getByRole("button", { name: "Yes, cancel booking" }).click();
     await expect(card(adminPage, nameB)).toHaveCount(0);
     expect((await admin().from("bookings").select("cancelled_by").eq("id", bookingB.id).single()).data).toEqual({ cancelled_by: "host" });
     expect(await fakeEvents(hostB.email)).toEqual([expect.objectContaining({ id: bookingB.google_event_id, status: "cancelled", deleteQuery: { sendUpdates: "all" } })]);

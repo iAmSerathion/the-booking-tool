@@ -1,10 +1,9 @@
 import { Fragment } from "react";
 import { currentProfile } from "@/lib/auth/profile";
-import { cancelBookingAsHost } from "@/lib/bookings/actions";
 import { loadUpcomingBookings } from "@/lib/bookings/data";
 import { slotLong, timeZoneLabel } from "@/lib/core/booking";
-import { ActionForm } from "../settings/action-form";
 import styles from "../settings/settings.module.css";
+import { CancelBooking } from "./cancel-booking";
 
 const show = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
 
@@ -69,13 +68,7 @@ export default async function BookingsPage() {
                   </>
                 )}
               </dl>
-              <ActionForm action={cancelBookingAsHost} submit={`Cancel booking with ${b.invitee_name}`}>
-                <input type="hidden" name="booking_id" value={b.id} />
-                <label className={styles.field}>
-                  Reason (optional)
-                  <input name="reason" maxLength={2000} />
-                </label>
-              </ActionForm>
+              <CancelBooking bookingId={b.id} invitee={b.invitee_name} />
             </li>
           );
         })}
