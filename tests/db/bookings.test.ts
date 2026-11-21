@@ -495,6 +495,62 @@ describe("create_booking", () => {
   });
 });
 
+describe("create_booking and the event type", () => {
+  async function newEventType(setup: Client) {
+    return scalar<string>(setup, "insert into public.event_types (slug, title, duration_minutes) values ('race-off', 'Race off', 30) returning id");
+  }
+
+  it("refuses an event type that was switched off and keeps the hold", () =>
+    rollback(async (client) => {
+      const { host } = await team(client);
+      const eventType = await newEventType(client);
+      await actAs(client, "service_role");
+      const holdId = await hold(client, host, at(10), at(10, 30));
+      await client.query("reset role");
+      await client.query("update public.event_types set active = false where id = $1", [eventType]);
+      await actAs(client, "service_role");
+      const error = await sqlError(client, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30) })]);
+      expect(error.code).toBe("P0002");
+      expect(error.message).toMatch(/event type/);
+      expect(await scalar(client, "select count(*)::int from public.slot_holds where id = $1", [holdId])).toBe(1);
+      expect(await scalar(client, "select count(*)::int from public.bookings where host_id = $1", [host])).toBe(0);
+    }));
+
+  it("waits for a concurrent switch-off and then refuses the booking", async () => {
+    const setup = await pool.connect();
+    const a = await pool.connect();
+    const b = await pool.connect();
+    let host = "";
+    let eventType = "";
+    try {
+      host = await addProfile(setup, "off-race@example.com");
+      eventType = await newEventType(setup);
+      await a.query("begin");
+      await a.query("update public.event_types set active = false where id = $1", [eventType]);
+
+      await b.query("begin");
+      await actAs(b, "service_role");
+      const holdId = await hold(b, host, at(10), at(10, 30));
+      const pidB = await scalar<number>(b, "select pg_backend_pid()");
+      const booking = sqlError(b, createSql, [holdId, bookingJson({ host, eventType, starts: at(10), ends: at(10, 30) })]);
+      await expect
+        .poll(() => scalar<boolean>(setup, "select wait_event_type = 'Lock' from pg_stat_activity where pid = $1", [pidB]), { timeout: 5_000 })
+        .toBe(true);
+      await a.query("commit");
+      expect((await booking).code).toBe("P0002");
+      await b.query("rollback");
+    } finally {
+      await a.query("rollback").catch(() => {});
+      await b.query("rollback").catch(() => {});
+      if (eventType) await setup.query("delete from public.event_types where id = $1", [eventType]);
+      if (host) await removeProfile(setup, host);
+      a.release();
+      b.release();
+      setup.release();
+    }
+  });
+});
+
 describe("booking_event_payload", () => {
   it("carries the link id and metadata on every outbox row of a link booking, null without a link", () =>
     rollback(async (client) => {
