@@ -28,6 +28,37 @@ export function widgetFrameAncestors(widget: WidgetRow | null, fallback: readonl
   return origins.length ? origins.join(" ") : "'none'";
 }
 
+// The admin's "allowed sites" field: one origin per line (commas and spaces work too), normalised like
+// save_booking_widget does (trimmed, lowercase, no trailing "/", deduplicated, sorted), then checked with the database
+// rule, so what the form accepts is exactly what the database stores.
+export function parseOrigins(text: string): { origins: string[] } | { error: string } {
+  const origins = [...new Set(text.split(/[\s,]+/).map((o) => o.toLowerCase().replace(/\/+$/, "")).filter(Boolean))].sort();
+  const bad = origins.find((o) => !embedOriginPattern.test(o));
+  if (bad) return { error: `"${bad}" is not an origin such as https://www.example.com (no path).` };
+  if (origins.length > maxEmbedOrigins) return { error: `At most ${maxEmbedOrigins} allowed sites.` };
+  return { origins };
+}
+
+// The code an embedding site copies. appUrl is the instance's validated origin (never a request header), id a widget id,
+// locale picks the loader's labels; nothing else goes into the HTML. The section mounts once the deferred loader ran.
+export function widgetSnippets(appUrl: string, id: string, locale: "de" | "en") {
+  const script = `<script src="${appUrl}/widget.js" data-locale="${locale}" defer></script>`;
+  return {
+    window: `${script}\n<a href="${appUrl}/widget/${id}" data-booking-widget="${id}">Book a time</a>`,
+    section: [
+      script,
+      `<div data-booking-section="${id}"></div>`,
+      "<script>",
+      '  addEventListener("DOMContentLoaded", function () {',
+      `    var element = document.querySelector('[data-booking-section="${id}"]');`,
+      "    // Optional prefill: { name, email, company, topic, answers: [{ id, answer }] }",
+      "    if (window.BookingWidget) window.BookingWidget.mount(element, {});",
+      "  });",
+      "</script>",
+    ].join("\n"),
+  };
+}
+
 export const widgetPath = (id: string, view: WidgetView) => `/widget/${id}${view === "section" ? "/section" : ""}`;
 // The confirmation stays under the widget path: every other page sends frame-ancestors 'none'.
 export const widgetConfirmationPath = (id: string, view: WidgetView, token: string, fresh = false) => `${widgetPath(id, view)}/confirmed/${token}${fresh ? "?new=1" : ""}`;

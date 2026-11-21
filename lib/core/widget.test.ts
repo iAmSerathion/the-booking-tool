@@ -4,12 +4,14 @@ import {
   embedOriginPattern,
   isWidgetId,
   parentOrigin,
+  parseOrigins,
   readWidgetBookingPage,
   readWidgetPrefill,
   widgetBookingPage,
   widgetConfirmationPath,
   widgetEmbedOrigins,
   widgetFrameAncestors,
+  widgetSnippets,
   widgetMessage,
   widgetPath,
   widgetStepMessages,
@@ -126,5 +128,30 @@ describe("booking page", () => {
     for (const bad of ["https://evil.example/pricing", "https://example.com/pricing?x=1", "https://example.com/pricing#a", "https://u:p@example.com/", "https://example.com/a/", "https://EXAMPLE.com/a", "javascript:alert(1)", `https://example.com/${"a".repeat(300)}`, 1]) {
       expect(readWidgetBookingPage(bad, allowed), String(bad)).toBeNull();
     }
+  });
+});
+
+describe("admin", () => {
+  it("parses allowed sites like save_booking_widget normalises them and accepts only what embed_origins_valid accepts", () => {
+    expect(parseOrigins(" https://WWW.Example.com/\nhttp://127.0.0.1:3101, https://example.com  https://example.com//\n\n")).toEqual({
+      origins: ["http://127.0.0.1:3101", "https://example.com", "https://www.example.com"],
+    });
+    expect(parseOrigins("")).toEqual({ origins: [] });
+    for (const bad of ["http://example.com", "https://example.com/path", "https://localhost", "example.com", "*", "'self'", "https://example.com;script-src", "http://10.0.0.1"]) {
+      expect(parseOrigins(bad), bad).toHaveProperty("error");
+    }
+    const many = Array.from({ length: 21 }, (_, i) => `https://s${i}.example.com`).join("\n");
+    expect(parseOrigins(many)).toEqual({ error: "At most 20 allowed sites." });
+  });
+
+  it("builds the window and section snippets from the instance origin only", () => {
+    const id = "00000000-0000-4000-8000-000000000201";
+    const { window, section } = widgetSnippets("https://booking.example.com", id, "de");
+    expect(window).toBe(
+      `<script src="https://booking.example.com/widget.js" data-locale="de" defer></script>\n<a href="https://booking.example.com/widget/${id}" data-booking-widget="${id}">Book a time</a>`,
+    );
+    expect(section.split("\n").slice(0, 2)).toEqual([`<script src="https://booking.example.com/widget.js" data-locale="de" defer></script>`, `<div data-booking-section="${id}"></div>`]);
+    expect(section).toContain(`document.querySelector('[data-booking-section="${id}"]')`);
+    expect(section).toContain("window.BookingWidget.mount(element, {})");
   });
 });
