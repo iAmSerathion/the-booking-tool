@@ -24,3 +24,6 @@ export const embedPort = Number(process.env.E2E_EMBED_PORT ?? 3101);
 export const embedOrigin = `http://127.0.0.1:${embedPort}`;
 export const embedBlockedPort = Number(process.env.E2E_EMBED_BLOCKED_PORT ?? 3102);
 export const embedBlockedOrigin = `http://127.0.0.1:${embedBlockedPort}`;
+// tests/e2e/webhook-receiver.mjs: the app's WEBHOOK_URL. The secret is fixed so tests can verify signatures.
+export const webhookUrl = `http://127.0.0.1:${Number(process.env.E2E_WEBHOOK_PORT ?? 2527)}`;
+export const webhookSecret = "e2e-webhook-secret-0123456789abcdef";
