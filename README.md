@@ -44,15 +44,20 @@ Requirements: Node 24+ and Docker.
 ```bash
 npm ci
 npm run stack:up             # local Supabase on 127.0.0.1, writes .env.e2e.local
-cp .env.example .env.local   # fill in the values; Supabase URL and keys are in .env.e2e.local
-npm run dev                  # http://127.0.0.1:3000 (bound to 127.0.0.1 only)
-npm run stack:down           # stop the stack and delete its data
+# create .env.local: copy the minimal block from CONTRIBUTING.md and paste in the two keys from .env.e2e.local
+node tests/e2e/google-fake.mjs   # terminal 1: stands in for Google Calendar
+node tests/e2e/smtp-sink.mjs     # terminal 2: catches the mails
+npm run dev                      # terminal 3: http://127.0.0.1:3000 (bound to 127.0.0.1 only)
+npm run dev:calendar             # connects the seeded host to the Google fake
+npm run dev:login                # prints a one-time URL that signs you in to /app as the seeded admin
+npm run stack:down               # stop the stack and delete its data
 ```
 
-The stack seeds example members (`admin.demo@example.com`, `host.demo@example.com`), an event type and a widget.
-Without a Google OAuth client the booking pages show no free times, because the seeded host has no calendar. To book a
-time by hand anyway, run the Google fake and connect the host to it (`npm run dev:calendar`); see
-[Try it without Google](CONTRIBUTING.md#try-it-without-google). Signing in by hand needs a real Google OAuth client:
+The minimal `.env.local` is in [CONTRIBUTING.md](CONTRIBUTING.md#local-development). The stack seeds example members
+(`admin.demo@example.com`, `host.demo@example.com`), an event type and a widget. With the steps above you can book a
+time on `http://127.0.0.1:3000/demo-host` and open the admin without a Google OAuth client; details in
+[Try it without Google](CONTRIBUTING.md#try-it-without-google). `npm run dev:calendar` and `npm run dev:login` refuse a
+Supabase that is not on this machine. Signing in with Google by hand needs a real Google OAuth client:
 [Signing in locally](CONTRIBUTING.md#signing-in-locally).
 
 Run the checks with `npm run lint`, `npm run typecheck` and `npm test`; the database and end-to-end tests are in
