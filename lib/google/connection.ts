@@ -1,4 +1,5 @@
 import { createAdminSupabase } from "@/lib/db/admin";
+import { stopChannel } from "./calendar";
 import { GoogleError, refreshAccess, revokeToken } from "./oauth";
 
 // A fresh Google access token for a member: refresh token from Vault, then Google. Server code only.
@@ -26,13 +27,29 @@ export async function googleAccess(userId: string): Promise<Access> {
   }
 }
 
-// Give the grant back to Google (best effort), then delete the token and the connection row. False if the database failed.
+// Stop the push channel (best effort, while access still works; an orphaned channel expires within 7 days), give the
+// grant back to Google (best effort), then delete the token and the connection row. False if the database failed.
+// Covers the settings disconnect and deactivation. A calendar account switch drops the channel columns in
+// google_connection_save instead, which orphans the old channel at Google until it expires.
 export async function disconnectGoogle(userId: string): Promise<boolean> {
   const admin = createAdminSupabase();
   const { data: token, error: readError } = await admin.rpc("google_refresh_token", { p_user_id: userId });
   if (readError) return false;
-  // shortcut: once calendar push channels exist (M8), stop the channel here first, while access still works.
-  if (token) await revokeToken(token as string);
+  if (token) {
+    await stopCalendarChannel(userId, token as string);
+    await revokeToken(token as string);
+  }
   const { error } = await admin.rpc("google_connection_delete", { p_user_id: userId });
   return !error;
+}
+
+async function stopCalendarChannel(userId: string, refreshToken: string) {
+  try {
+    const { data } = await createAdminSupabase().from("calendar_connections").select("channel_id, channel_resource_id").eq("user_id", userId).maybeSingle();
+    if (!data?.channel_id || !data.channel_resource_id) return;
+    const { access_token } = await refreshAccess(refreshToken);
+    await stopChannel(access_token, { id: data.channel_id, resourceId: data.channel_resource_id });
+  } catch (cause) {
+    console.error("calendar channel: stop", userId, cause);
+  }
 }

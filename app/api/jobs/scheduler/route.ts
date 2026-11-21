@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { calendarUpkeep } from "@/lib/calendar/upkeep";
 import { getConfig } from "@/lib/config";
 import { runJobs } from "@/lib/jobs/scheduler";
 import { retryDueMails } from "@/lib/mail/send";
@@ -51,9 +52,7 @@ export async function POST(request: Request) {
 
   const jobs = forBooking ? await step("jobs", () => runJobs({ now: c.now, onlyBooking: c.onlyBooking })) : null;
   const mails = forBooking ? await step("mails", () => retryDueMails({ now: c.now, onlyBooking: c.onlyBooking })) : null;
-  // M8 sync step: calendar channel upkeep and safety sync go here, when !c.scoped || c.onlyUser !== null:
-  // calendarUpkeep({ now: c.now, onlyUser: c.onlyUser }).
-  const calendar = null;
+  const calendar = !c.scoped || c.onlyUser !== null ? await step("calendar", () => calendarUpkeep({ now: c.now, onlyUser: c.onlyUser })) : null;
   // M9: dispatch the outbox here (unscoped runs only).
   return Response.json({ jobs, mails, calendar });
 }
