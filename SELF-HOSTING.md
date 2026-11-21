@@ -69,10 +69,15 @@ database scheduler (section 6).
 ### Local or self-hosted Supabase
 
 `npm run stack:up` is for development and tests only: it starts from scratch and deletes all data on every run
-(see [CONTRIBUTING.md](CONTRIBUTING.md)). For your own infrastructure, a self-hosted Supabase (with Auth, PostgREST and
-Vault) should work the same way as a hosted project, but it is not tested. `supabase/config.toml` enables the Google
-provider with `client_id = "env(GOOGLE_CLIENT_ID)"` and `secret = "env(GOOGLE_CLIENT_SECRET)"`, so export both before
-`supabase start`; its redirect allow-list only names local development URLs.
+(see [CONTRIBUTING.md](CONTRIBUTING.md)). `supabase start` (with `supabase/config.toml`) is the Supabase CLI's
+development stack as well: it publishes its ports on all interfaces and its redirect allow-list only names local
+development URLs, so do not use it for an instance.
+
+For your own infrastructure, use Supabase's self-hosting Docker setup behind a firewall, or with its ports bound to
+127.0.0.1 behind your reverse proxy. It should work the same way as a hosted project (Auth, PostgREST and Vault), but
+it is not tested. Configure the Google provider there through GoTrue's `GOTRUE_EXTERNAL_GOOGLE_ENABLED`,
+`GOTRUE_EXTERNAL_GOOGLE_CLIENT_ID`, `GOTRUE_EXTERNAL_GOOGLE_SECRET` and `GOTRUE_EXTERNAL_GOOGLE_REDIRECT_URI`
+(`<SUPABASE_URL>/auth/v1/callback`), and set the site URL and redirect allow-list as in step 5 above.
 
 ## 3. Environment variables
 
@@ -91,7 +96,7 @@ every missing or invalid variable. Values are read at runtime; set them in the e
 | `GOOGLE_CLIENT_ID` | OAuth web client ID (section 1). |
 | `GOOGLE_CLIENT_SECRET` | OAuth web client secret. Secret. |
 | `SCHEDULER_SECRET` | Bearer token for `POST <APP_URL>/api/jobs/scheduler`, at least 32 characters (`openssl rand -hex 32`). Secret. |
-| `SMTP_URL` | `smtp://` or `smtps://` URL with credentials, e.g. `smtps://user:password@smtp.example.com:465`. Secret. |
+| `SMTP_URL` | `smtp://` or `smtps://` URL with credentials, e.g. `smtps://user:password@smtp.example.com:465` (TLS from the start) or `smtp://user:password@smtp.example.com:587?requireTLS=true` (STARTTLS). Secret. See section 5. |
 | `MAIL_FROM` | Sender of all mails, e.g. `Bookings <bookings@example.com>`. |
 
 ### Optional
@@ -103,7 +108,7 @@ every missing or invalid variable. Values are read at runtime; set them in the e
 | `PRIVACY_URL` | none | Your privacy policy, linked on booking pages. When set, invitees must confirm they read it. |
 | `IMPRINT_URL` | none | Your imprint (legal notice), linked on booking pages. |
 | `DEFAULT_LOCALE` | `de` | `de` or `en`: language of pages and mails. |
-| `DEFAULT_TIMEZONE` | `Europe/Berlin` | IANA time zone for new accounts. |
+| `DEFAULT_TIMEZONE` | `Europe/Berlin` | IANA time zone that booking and reschedule pages show when the invitee's browser zone is unknown, and the fallback for stored invitee time zones. It does not set members' zones: new members start on `Europe/Berlin` and change it under Settings. |
 | `ALLOWED_GOOGLE_DOMAINS` | empty | Comma-separated Google Workspace domains whose accounts get a member profile on first sign-in (checked against Google's `hd` claim, not the email). Empty: invited members only, any Google account works. |
 | `GOOGLE_HOSTED_DOMAIN` | none | Workspace domain sent to Google as the `hd` hint, so the account chooser shows only that domain. Then only emails of that domain can be invited. |
 | `INITIAL_ADMIN_EMAIL` | none | On a fresh install the first Google sign-in with this address creates the admin profile. Once an active admin exists it has no effect. |
@@ -130,13 +135,27 @@ sign in with Google. With no active admin in the database, that sign-in creates 
 re-checks this under a lock, so two simultaneous first sign-ins cannot both become admin). Google must report the
 email as verified. After that the variable has no effect; you can leave it or remove it.
 
-Then, in the admin: connect your calendar under Settings, adjust the event types (the migrations create a default one), and invite members under Team (no mail
-is sent; tell them to sign in at `<APP_URL>/login`). Who may sign in is described in
-[docs/features.md](docs/features.md#sign-in).
+Then make your first booking page work. The admin lives at `<APP_URL>/app`:
+
+1. **Settings → Google Calendar:** "Connect Google Calendar" and allow the calendar permission.
+2. **Settings → Availability:** check your weekly windows (new members start with Monday to Friday, 09:00-12:00 and
+   14:00-17:00) and "Save availability". Without windows a booking page shows no times.
+3. **Settings → Booking rules:** check the time zone (new members start on `Europe/Berlin`), buffer, minimum notice and
+   the Google Meet option.
+4. **Team:** the first admin is not bookable. Click "Make bookable" on your own entry (and "Change link name" for a
+   page of your own at `<APP_URL>/<link name>`), or invite the members who take bookings with "Bookable" ticked (no
+   mail is sent; tell them to sign in at `<APP_URL>/login`). "Website bookings" chooses who gets bookings from `/`.
+5. **Event types:** check the default type the migrations create.
+6. Open `<APP_URL>/` (or `<APP_URL>/<link name>`) and book a test time.
+
+Who may sign in is described in [docs/features.md](docs/features.md#sign-in).
 
 ## 5. Mail (SMTP)
 
-Any SMTP provider works (a transactional mail service or your own server). Set `SMTP_URL` and `MAIL_FROM`; use a
+Any SMTP provider works (a transactional mail service or your own server). Set `SMTP_URL` and `MAIL_FROM`.
+`smtps://...:465` uses TLS from the start. `smtp://...:587` upgrades with STARTTLS when the server offers it, but would
+otherwise send the credentials in plain text; add `?requireTLS=true` (for example
+`smtp://user:password@smtp.example.com:587?requireTLS=true`) so it refuses to send without TLS. Use a
 sender address on a domain whose SPF and DKIM records allow that provider. Mails to the invitee reply to the host,
 mails to the host reply to the invitee. Google also sends its own calendar invitation and updates to the invitee, so
 invitees are told even if a mail fails. Failed sends are retried by the scheduler (1 min, 5 min, 30 min, 2 h, 6 h);
@@ -146,8 +165,9 @@ see [docs/features.md](docs/features.md#mail).
 
 `POST <APP_URL>/api/jobs/scheduler` runs reminders, mail retries, the calendar upkeep (push channel renewal and the
 15-minute safety sync) and the webhook outbox. Something has to call it **every minute** with
-`Authorization: Bearer <SCHEDULER_SECRET>`. Without it no reminders, retries or webhooks go out and calendar changes
-stop reaching bookings. A run may take up to 60 seconds.
+`Authorization: Bearer <SCHEDULER_SECRET>`. Without it no reminders, retries or webhooks go out, calendar push
+channels are not renewed (they expire within a week, and then calendar changes stop reaching bookings) and there is no
+15-minute safety sync. A run may take up to 60 seconds.
 
 ### Option A: any external cron
 
@@ -169,8 +189,13 @@ select vault.create_secret('<SCHEDULER_SECRET>', 'scheduler_secret');
 ```
 
 The file enables pg_cron and pg_net and schedules the job `booking-scheduler` every minute. To stop it:
-`select cron.unschedule('booking-scheduler');`. After changing `SCHEDULER_SECRET`, update the Vault secret with
-`vault.update_secret`.
+`select cron.unschedule('booking-scheduler');`. `vault.update_secret` takes the secret's id, not its name, and
+`create_secret` with an existing name fails. After changing `SCHEDULER_SECRET` (or `APP_URL`), update the secrets:
+
+```sql
+select vault.update_secret((select id from vault.secrets where name = 'scheduler_secret'), '<new SCHEDULER_SECRET>');
+select vault.update_secret((select id from vault.secrets where name = 'scheduler_url'), '<new APP_URL>/api/jobs/scheduler');
+```
 
 ## 7. Domain, HTTPS and proxies
 

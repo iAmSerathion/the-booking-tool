@@ -76,7 +76,7 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 ## Team
 
 - Team in the admin lists every member with their booking page. Admins make members admin or bookable, change link
-  names (the old `/<slug>` stops working; reserved words are the app's routes), invite members by their Google account
+  names (the old `/<slug>` stops working; reserved words are the app's routes plus `privacy` and `imprint`), invite members by their Google account
   email, reactivate deactivated members and choose who gets bookings from `/` (one person or round robin). At least
   one active member always stays an admin.
 - An invite creates the account and profile; no mail is sent, so the admin tells the person to sign in at

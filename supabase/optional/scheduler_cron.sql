@@ -5,6 +5,8 @@
 --   select vault.create_secret('<APP_URL>/api/jobs/scheduler', 'scheduler_url');
 --   select vault.create_secret('<SCHEDULER_SECRET>', 'scheduler_secret');
 --
+-- To change a value later (update_secret takes the id, not the name):
+--   select vault.update_secret((select id from vault.secrets where name = 'scheduler_secret'), '<new SCHEDULER_SECRET>');
 -- To stop it: select cron.unschedule('booking-scheduler');
 
 create extension if not exists pg_cron;

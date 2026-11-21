@@ -35,7 +35,7 @@ Only the latest `main` gets security fixes. There are no release branches yet.
 - **Signed webhooks.** Every webhook carries `X-Signature`, an HMAC-SHA256 of the raw body with `WEBHOOK_SECRET`
   (at least 32 characters). The URL must be https (plain http only for loopback) and may not carry credentials.
   Receivers should check the signature and reject replays ([docs/webhooks.md](docs/webhooks.md)).
-- **Embedding.** Widget pages send `Content-Security-Policy: frame-ancestors` with only the widget's allowed origins;
+- **Embedding.** Widget pages send `Content-Security-Policy: frame-ancestors` with the widget's allowed sites (or `EMBED_ALLOWED_ORIGINS` when it has none) plus `APP_URL`;
   every other page sends `frame-ancestors 'none'` and `X-Frame-Options: DENY`. `widget.js` pins messages to the
   instance's origin, accepts messages only from its own frames, and sends prefill data only by `postMessage` to that
   origin, never in a URL. Host pages receive events without invitee data.
