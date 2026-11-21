@@ -5,8 +5,8 @@ import { cleanText, type Question, validateAnswers } from "./questions";
 // Booking links (booking_links): what a link prefills, the admin form that creates one, and its state. Pure.
 
 // What the booking form starts with on "/l/<token>". Keys as stored in booking_links.prefill (rebook_link writes name,
-// email, company, phone, timezone; the admin form also answers).
-export type Prefill = { name?: string; email?: string; company?: string; phone?: string; timeZone?: string; answers?: Record<string, string | string[]> };
+// email, company, phone, timezone; the admin form also answers). A widget's host page sends the same keys plus topic.
+export type Prefill = { name?: string; email?: string; company?: string; phone?: string; topic?: string; timeZone?: string; answers?: Record<string, string | string[]> };
 
 // Stored prefill -> the form's initial values. Members write prefill directly (RLS insert), so everything is cleaned
 // again here: strings only, length caps, a real time zone, and only valid answers to the event type's questions.
@@ -14,7 +14,7 @@ export function linkPrefill(raw: unknown, questions: readonly Question[]): Prefi
   const given = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const input = cleanBookingInput(given);
   const prefill: Prefill = {};
-  for (const key of ["name", "email", "company", "phone"] as const) if (input[key]) prefill[key] = input[key];
+  for (const key of ["name", "email", "company", "phone", "topic"] as const) if (input[key]) prefill[key] = input[key];
   const zone = safeTimeZone(given.timezone, "");
   if (zone) prefill.timeZone = zone;
   const answers = validateAnswers(questions, given.answers).answers;

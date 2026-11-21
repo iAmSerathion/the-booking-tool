@@ -2,7 +2,8 @@ import { loadAvailability, loadOffer } from "@/lib/availability/data";
 import { freeSlots, withoutBooking } from "@/lib/core/availability";
 import { linkPrefill, linkStatus, type Prefill } from "@/lib/core/links";
 import type { Question } from "@/lib/core/questions";
-import type { WidgetView } from "@/lib/core/widget";
+import { type WidgetView, widgetEmbedOrigins } from "@/lib/core/widget";
+import { getConfig } from "@/lib/config";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { loadWidget } from "@/lib/widget/data";
 import { hashToken, plausibleToken } from "./token";
@@ -22,7 +23,7 @@ export type ChannelRef =
 export type BookingHost = { id: string; name: string; meetAuto: boolean };
 export type BookingEventType = { id: string; slug: string; title: string; description: string | null; durationMinutes: number; questions: Question[] };
 // Links only: linkId (server side, passed to create_booking) and the cleaned prefill. The link's metadata never leaves
-// the database. Widgets only: widgetId.
+// the database. Widgets only: widgetId and the origins that may embed it (for the booking page).
 export type BookingContext = {
   via: "page" | "person_link" | "link" | "widget";
   hosts: BookingHost[];
@@ -30,6 +31,7 @@ export type BookingContext = {
   linkId?: string;
   prefill?: Prefill;
   widgetId?: string;
+  embedOrigins?: string[];
 };
 // What the browser gets per free time.
 export type PublicSlot = { start: string; end: string };
@@ -140,7 +142,8 @@ async function loadWidgetContext(id: string): Promise<BookingContext | null> {
   if (error) throw error;
   const hosts = people.map((p) => ({ id: p.id, name: p.name, meetAuto: p.meet_auto })).slice(0, widget.mode === "person" ? 1 : undefined);
   if (hosts.length === 0) return null;
-  return { via: "widget", hosts, eventType: toEventType(type.data), widgetId: widget.id };
+  const { embedAllowedOrigins, appUrl } = getConfig();
+  return { via: "widget", hosts, eventType: toEventType(type.data), widgetId: widget.id, embedOrigins: widgetEmbedOrigins(widget, embedAllowedOrigins, appUrl) };
 }
 
 export const publicSlots = (slots: readonly PublicSlot[]): PublicSlot[] => slots.map(({ start, end }) => ({ start, end }));
