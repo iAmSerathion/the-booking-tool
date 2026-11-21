@@ -8,6 +8,7 @@ import { getConfig } from "@/lib/config";
 import { cleanBookingInput, eventSummary, looksLikeBot, roundRobinOrder, validateBooking } from "@/lib/core/booking";
 import { addDays, dayStart, safeTimeZone, zonedDay } from "@/lib/core/dates";
 import { validateAnswers } from "@/lib/core/questions";
+import { widgetConfirmationPath } from "@/lib/core/widget";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
@@ -56,9 +57,9 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     console.error("booking: context", cause);
     return null;
   });
-  // Gone meanwhile (event type switched off, member no longer bookable, link used up, expired or revoked) or the database
-  // failed.
-  if (!context) return { ok: false, error: ref.kind === "link" ? "booking.error.linkInvalid" : "booking.error.failed" };
+  // Gone meanwhile (event type switched off, member no longer bookable, link used up, expired or revoked, widget switched
+  // off) or the database failed.
+  if (!context) return { ok: false, error: ref.kind === "link" ? "booking.error.linkInvalid" : ref.kind === "widget" ? "booking.error.widgetClosed" : "booking.error.failed" };
   if (context.hosts.length === 0) return { ok: false, error: "booking.error.taken", slots: [] };
 
   const input = cleanBookingInput(form);
@@ -167,6 +168,7 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
         booked_via: context.via,
         // Re-derived from the token on the server; create_booking checks the link again under its row lock.
         link_id: context.linkId ?? null,
+        widget_id: context.widgetId ?? null,
         invitee_name: input.name,
         invitee_email: input.email,
         invitee_company: input.company,
@@ -195,7 +197,8 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
     updateTag(busyCacheTag(hostId));
     // M8 seams: plan the booking's jobs and send the confirmation mail here (after()). M9 delivers the outbox row that
     // create_booking already wrote.
-    redirect(`/confirmed/${token}?new=1`);
+    // Widget bookings stay inside the frame: /confirmed sends frame-ancestors 'none'.
+    redirect(ref.kind === "widget" ? widgetConfirmationPath(ref.id, ref.view, token, true) : `/confirmed/${token}?new=1`);
   }
 
   // Every free host's hold failed (someone else was faster) or their Google access broke meanwhile.
