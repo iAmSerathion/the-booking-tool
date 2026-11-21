@@ -1,10 +1,12 @@
 "use server";
 
 import { refresh, updateTag } from "next/cache";
+import { after } from "next/server";
 import { signedIn } from "@/lib/auth/member";
 import { busyCacheTag } from "@/lib/availability/data";
 import { removeBookingEvent } from "@/lib/booking/google";
 import { cancelReason } from "@/lib/core/change";
+import { sendCancelMails } from "@/lib/mail/booking";
 import type { ActionState } from "@/lib/settings/actions";
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -14,7 +16,7 @@ const failed = (error: string): ActionState => ({ error, saved: false });
 // and writes the outbox row; only then is the Google event removed, with the BOOKING host's connection, so a failed
 // cancel never leaves a booked row whose guest already got Google's cancellation.
 export async function cancelBookingAsHost(_state: ActionState, form: FormData): Promise<ActionState> {
-  const { supabase } = await signedIn();
+  const { supabase, userId } = await signedIn();
   const id = form.get("booking_id");
   if (typeof id !== "string" || !uuidPattern.test(id)) return failed("Unknown booking.");
   // Visibility through RLS: a member cannot even read another host's booking.
@@ -22,7 +24,8 @@ export async function cancelBookingAsHost(_state: ActionState, form: FormData): 
   if (readError) return failed("Cancelling failed. Please try again.");
   if (!booking) return failed("Unknown booking.");
 
-  const { error } = await supabase.rpc("cancel_booking_as_host", { p_booking_id: id, p_reason: cancelReason(form.get("reason")) });
+  const reason = cancelReason(form.get("reason"));
+  const { error } = await supabase.rpc("cancel_booking_as_host", { p_booking_id: id, p_reason: reason });
   if (error) {
     if (error.code === "42501") return failed("You cannot cancel this booking.");
     if (error.code === "P0002") return failed("This booking can no longer be cancelled.");
@@ -31,6 +34,9 @@ export async function cancelBookingAsHost(_state: ActionState, form: FormData): 
   }
   updateTag(busyCacheTag(booking.host_id));
   refresh();
+  // The host hears about it only when an admin cancelled their booking.
+  const by = userId === booking.host_id ? "host" : "admin";
+  after(() => sendCancelMails(id, { by, reason, notifyHost: by === "admin" }));
   if (!(await removeBookingEvent(booking.host_id, booking.google_event_id)))
     return failed("The booking is cancelled, but its Google Calendar event could not be removed.");
   return { error: null, saved: true };

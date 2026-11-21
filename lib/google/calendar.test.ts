@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GoogleError } from "./oauth";
-import { createEvent, deleteEvent, freeBusy, listEvents, moveEvent } from "./calendar";
+import { createEvent, deleteEvent, freeBusy, listEventChanges, listEvents, moveEvent, stopChannel, watchEvents } from "./calendar";
 
 const env = {
   APP_URL: "https://booking.example.com",
@@ -175,5 +175,67 @@ describe("moveEvent", () => {
     await expect(moveEvent("token", "host@example.com", "e1", time)).rejects.toMatchObject({ code: "NOT_FOUND", status: 404 });
     stubFetch({ status: 503, body: "" });
     await expect(moveEvent("token", "host@example.com", "e1", time)).rejects.toMatchObject({ code: "event_patch", status: 503 });
+  });
+});
+
+describe("listEventChanges", () => {
+  it("reads every page since the sync token, deleted events included, and returns the next token", async () => {
+    stubFetch({ body: { items: [{ id: "a", status: "confirmed" }], nextPageToken: "p2" } }, { body: { items: [{ id: "b", status: "cancelled" }], nextSyncToken: "s2" } });
+    const id = "en.usa#holiday@group.v.calendar.google.com";
+    expect(await listEventChanges("token", id, { syncToken: "s1", from })).toEqual({
+      events: [
+        { id: "a", status: "confirmed" },
+        { id: "b", status: "cancelled" },
+      ],
+      nextSyncToken: "s2",
+    });
+    const [first, second] = calls.map((call) => new URL(call.url));
+    expect(first.pathname).toBe("/calendar/v3/calendars/en.usa%23holiday%40group.v.calendar.google.com/events");
+    expect(first.searchParams.get("syncToken")).toBe("s1");
+    expect(first.searchParams.get("showDeleted")).toBe("true");
+    expect(first.searchParams.has("timeMin")).toBe(false);
+    expect(second.searchParams.get("pageToken")).toBe("p2");
+  });
+
+  it("without a token syncs fully from the given time", async () => {
+    stubFetch({ body: { items: [], nextSyncToken: "s1" } });
+    expect(await listEventChanges("token", "host@example.com", { syncToken: null, from })).toEqual({ events: [], nextSyncToken: "s1" });
+    const url = new URL(calls[0].url);
+    expect(url.searchParams.get("timeMin")).toBe(from.toISOString());
+    expect(url.searchParams.get("showDeleted")).toBe("true");
+    expect(url.searchParams.has("syncToken")).toBe(false);
+  });
+
+  it("maps 410 to sync_token_gone, and a last page without a token to no_sync_token", async () => {
+    stubFetch({ status: 410, body: { error: { status: "GONE" } } });
+    await expect(listEventChanges("token", "host@example.com", { syncToken: "old", from })).rejects.toMatchObject({ code: "sync_token_gone", status: 410 });
+    stubFetch({ body: { items: [] } });
+    await expect(listEventChanges("token", "host@example.com", { syncToken: "s1", from })).rejects.toMatchObject({ code: "no_sync_token" });
+    stubFetch({ status: 401, body: { error: { status: "UNAUTHENTICATED" } } });
+    await expect(listEventChanges("token", "host@example.com", { syncToken: "s1", from })).rejects.toBeInstanceOf(GoogleError);
+  });
+});
+
+describe("watchEvents and stopChannel", () => {
+  it("watches with id, token, address and ttl, and reads the expiration", async () => {
+    stubFetch({ body: { resourceId: "r1", expiration: String(to.getTime()) } });
+    const channel = { id: "c1", token: "secret", address: "https://booking.example.com/api/google/calendar-webhook", ttlSeconds: 604800 };
+    expect(await watchEvents("token", "host@example.com", channel)).toEqual({ resourceId: "r1", expiresAt: to });
+    expect(calls[0].url).toBe("https://www.googleapis.com/calendar/v3/calendars/host%40example.com/events/watch");
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({ id: "c1", type: "web_hook", address: channel.address, token: "secret", params: { ttl: "604800" } });
+  });
+
+  it("throws when Google refuses the channel", async () => {
+    stubFetch({ status: 400, body: { error: { status: "INVALID_ARGUMENT" } } });
+    await expect(watchEvents("token", "host@example.com", { id: "c1", token: "t", address: "http://x.example.com", ttlSeconds: 60 })).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  });
+
+  it("stops a channel; an unknown one counts as stopped", async () => {
+    stubFetch({ body: {} }, { status: 404, body: {} }, { status: 500, body: {} });
+    await stopChannel("token", { id: "c1", resourceId: "r1" });
+    expect(calls[0].url).toBe("https://www.googleapis.com/calendar/v3/channels/stop");
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({ id: "c1", resourceId: "r1" });
+    await stopChannel("token", { id: "c1", resourceId: "r1" });
+    await expect(stopChannel("token", { id: "c1", resourceId: "r1" })).rejects.toMatchObject({ code: "channel_stop" });
   });
 });

@@ -5,6 +5,10 @@ export const baseURL = `http://127.0.0.1:${port}`;
 export const googleFakePort = Number(process.env.GOOGLE_FAKE_PORT ?? 3999);
 export const googleFakeUrl = `http://127.0.0.1:${googleFakePort}`;
 
+// tests/e2e/smtp-sink.mjs: the app sends mail to the SMTP port; tests read it back over HTTP. Both on 127.0.0.1.
+export const smtpPort = Number(process.env.E2E_SMTP_PORT ?? 2525);
+export const smtpHttpUrl = `http://127.0.0.1:${Number(process.env.E2E_SMTP_HTTP_PORT ?? 2526)}`;
+
 export const supabaseEnvKeys = ["NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 // Tests create and delete users and rows: refuse anything but a Supabase on this machine.

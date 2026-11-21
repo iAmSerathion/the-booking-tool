@@ -1,4 +1,6 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { after, type NextRequest, NextResponse } from "next/server";
+import { renewCalendarChannel } from "@/lib/calendar/channel";
+import { syncCalendar } from "@/lib/calendar/sync";
 import { getConfig } from "@/lib/config";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { createSupabase } from "@/lib/db/server";
@@ -66,6 +68,10 @@ export async function GET(request: NextRequest) {
     p_primary_calendar_id: primaryCalendarId,
   });
   if (error) return refuse("error");
-  // shortcut: no push channel or first calendar sync yet; both hook in here once calendar sync lands (M8).
+  // The push channel, then the first sync, which stores the sync token. Failures leave it to the scheduler's upkeep.
+  after(async () => {
+    await renewCalendarChannel(userId).catch((cause) => console.error("calendar channel after connect", cause));
+    await syncCalendar(userId).catch((cause) => console.error("calendar sync after connect", cause));
+  });
   return back();
 }

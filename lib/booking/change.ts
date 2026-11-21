@@ -2,6 +2,7 @@
 
 import { updateTag } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { busyCacheTag } from "@/lib/availability/data";
 import { getConfig } from "@/lib/config";
 import { bookingChange, cancelReason } from "@/lib/core/change";
@@ -11,6 +12,8 @@ import { moveEvent } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
 import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
+import { planBookingJobs } from "@/lib/jobs/plan";
+import { sendCancelMails, sendRescheduleMails } from "@/lib/mail/booking";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
 import { dropLease, takeLease } from "./lease";
@@ -112,7 +115,10 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
 
   await dropLease(booking.bookingId, lease);
   updateTag(busyCacheTag(booking.hostId));
-  // M8 seams: re-plan the booking's jobs and send the change mail here. M9 delivers the outbox row already written.
+  // The old reminders died with the move (cancel trigger); plan new ones for the new time. M9 delivers the outbox row.
+  after(() =>
+    Promise.all([planBookingJobs(booking.bookingId), sendRescheduleMails(booking.bookingId, token, { startsAt: booking.startsAt, endsAt: booking.endsAt })]),
+  );
   redirect(`/confirmed/${token}`);
 }
 
@@ -125,11 +131,8 @@ export async function cancelBooking(token: string, form: FormData): Promise<void
   if (!(await withinBookingLimit(booking.bookingId))) redirect(`${back}?error=tooMany`);
 
   // Database first: if this fails, the invitee must not get a cancellation from Google for a booking that still stands.
-  const { error } = await createAdminSupabase().rpc("cancel_booking", {
-    p_booking_id: booking.bookingId,
-    p_cancelled_by: "invitee",
-    p_reason: cancelReason(form.get("reason")),
-  });
+  const reason = cancelReason(form.get("reason"));
+  const { error } = await createAdminSupabase().rpc("cancel_booking", { p_booking_id: booking.bookingId, p_cancelled_by: "invitee", p_reason: reason });
   if (error && error.code !== "P0002") {
     console.error("booking: cancel_booking", error);
     redirect(`${back}?error=failed`);
@@ -138,7 +141,8 @@ export async function cancelBooking(token: string, form: FormData): Promise<void
     // The cancellation counts even if Google fails; the event is left behind then (logged).
     await removeBookingEvent(booking.hostId, booking.googleEventId);
     updateTag(busyCacheTag(booking.hostId));
-    // M8 seams: the cancellation mail. M9 delivers the outbox row already written.
+    // M9 delivers the outbox row already written.
+    after(() => sendCancelMails(booking.bookingId, { by: "invitee", reason, token, notifyHost: true }));
   }
   redirect(back);
 }
