@@ -56,12 +56,16 @@ Vault).
    first admin.
 3. **Authentication → Sign In / Providers → Google**: enable it with the client ID and secret from step 1.
 4. **Authentication → Sign In / Providers → Email**: switch the Email provider off. Sign-in is Google only; the app
-   never uses email or password logins.
+   never uses email or password logins. Leave **Allow new users to sign up** on: the first admin and members from
+   `ALLOWED_GOOGLE_DOMAINS` get their Supabase Auth user at their first Google sign-in. The app decides who gets in
+   (`/auth/callback`) and removes refused accounts that have no profile from Supabase Auth again.
 5. **Authentication → URL Configuration**: set the Site URL to `APP_URL` and add `<APP_URL>/auth/callback` to the
    redirect URLs.
-6. **Project Settings → API**: copy the project URL (`NEXT_PUBLIC_SUPABASE_URL`), the anon public key
-   (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) and the service role key (`SUPABASE_SERVICE_ROLE_KEY`). The service role key
-   bypasses row level security; keep it on the server only.
+6. Copy the project URL (`https://<project ref>.supabase.co`, for `NEXT_PUBLIC_SUPABASE_URL`), the `anon` key
+   (`NEXT_PUBLIC_SUPABASE_ANON_KEY`) and the `service_role` key (`SUPABASE_SERVICE_ROLE_KEY`). The app was tested with
+   these JWT-based keys; on current projects they are under **Project Settings → API Keys → Legacy API keys**. The
+   newer publishable and secret keys are untested. The service role key bypasses row level security; keep it on the
+   server only.
 
 Vault (`supabase_vault`) is created by the first migration. pg_cron and pg_net are only needed for the optional
 database scheduler (section 6).
@@ -83,7 +87,11 @@ it is not tested. Configure the Google provider there through GoTrue's `GOTRUE_E
 
 Every variable is read by `lib/config.ts`; `.env.example` lists the same set with comments (a unit test keeps the
 two in sync). Until every variable is valid, pages and routes fail with an "Invalid configuration" error that lists
-every missing or invalid variable. Values are read at runtime; set them in the environment of both `next build` and `next start`.
+every missing or invalid variable.
+
+`next build` prerenders and checks the configuration too, so the build environment needs every required variable,
+secrets included; with one missing the build stops with the same list. Set the same values for `next build` and
+`next start`.
 
 ### Required
 
@@ -197,6 +205,20 @@ select vault.update_secret((select id from vault.secrets where name = 'scheduler
 select vault.update_secret((select id from vault.secrets where name = 'scheduler_url'), '<new APP_URL>/api/jobs/scheduler');
 ```
 
+To check that it runs, look at the job runs and at the HTTP responses pg_net received (pg_net keeps them for a few
+hours):
+
+```sql
+select status, return_message, start_time from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'booking-scheduler') order by start_time desc limit 5;
+
+select status_code, error_msg, created from net._http_response order by created desc limit 5;
+```
+
+A run marked `succeeded` only means the request was queued. The responses should have `status_code` 200; `401` means
+the Vault secret `scheduler_secret` does not match `SCHEDULER_SECRET`, and an empty `status_code` with an `error_msg`
+means the app was not reachable at `scheduler_url` (or timed out).
+
 ## 7. Domain, HTTPS and proxies
 
 The instance needs a public HTTPS origin:
@@ -228,11 +250,12 @@ address when a proxy tells it the address. With `TRUST_PROXY_HEADERS=true` it ta
 
   ```bash
   npm ci
-  npm run build      # next build
-  npm start          # next start, port 3000 by default
+  npm run build                                       # next build, with every required variable set (section 3)
+  npx next start --hostname 127.0.0.1 --port 3000     # loopback only
   ```
 
-  Behind a reverse proxy, bind the app to loopback only: `npx next start --hostname 127.0.0.1 --port 3000`.
+  Expose it only through your HTTPS reverse proxy (section 7), which forwards to `127.0.0.1:3000`. Plain `npm start`
+  (`next start`) listens on all interfaces; use it only on platforms that handle the networking for you.
 - **Vercel** works as well: import the repository, set the variables, and use an external cron or pg_cron for the
   scheduler. The scheduler route sets `maxDuration = 60`.
 - **No Dockerfile** is provided in this release.
@@ -242,8 +265,9 @@ address when a proxy tells it the address. With `TRUST_PROXY_HEADERS=true` it ta
 1. Read the changes since your version.
 2. Apply new migrations first: `npx supabase db push` (it applies only migrations the database does not have yet).
    Migrations are never edited after release; each change is a new file.
-3. Deploy the new code (`npm ci && npm run build`, then restart).
-4. Compare your environment with `.env.example` for new variables.
+3. Compare your environment with the new `.env.example` and set new required variables **before** you deploy: the
+   build checks the configuration and stops if one is missing.
+4. Deploy the new code (`npm ci && npm run build`, then restart).
 
 ## 10. Backups and data retention
 
@@ -277,7 +301,9 @@ address when a proxy tells it the address. With `TRUST_PROXY_HEADERS=true` it ta
 - **No times on a booking page:** the member is not bookable, has no working calendar connection, or has no
   availability windows within the slot horizon.
 - **No reminders, mails stuck in `pending`, no webhooks:** the scheduler is not called or gets `401` (wrong secret).
-  Call it once by hand with the curl command above. Failed mails keep a short reason in `outbound_mails.last_error`.
+  Call it once by hand with the curl command above. With pg_cron, check `net._http_response` and
+  `cron.job_run_details` (section 6): `401` there means the Vault secret differs from `SCHEDULER_SECRET`. Failed mails
+  keep a short reason in `outbound_mails.last_error`.
 - **Calendar changes take up to 15 minutes:** push is not active, because `APP_URL` is not public https or Google
   refused the channel (retried hourly).
 - **Webhooks not arriving:** check `booking_outbox.last_error` (`http 500`, `timeout`, `network error`,
