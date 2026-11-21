@@ -163,6 +163,17 @@ describe("dispatchOutbox", () => {
     expect(state.rows[0].given_up_at).toEqual(expect.any(String));
   });
 
+  it("counts the retry from the failed attempt when the run started earlier", async () => {
+    answer = 500;
+    state.rows = [row("o1")];
+    state.claimable = ["o1"];
+    // The run began 10 minutes ago (a long batch); a 1-minute retry from that clock would already be due.
+    const started = new Date(Date.now() - 10 * 60_000);
+    const before = Date.now();
+    expect(await dispatchOutbox({ now: started })).toEqual({ delivered: 0, retry: 1, failed: 0 });
+    expect(Date.parse(state.rows[0].next_attempt_at)).toBeGreaterThanOrEqual(before + 60_000);
+  });
+
   it("skips a row whose lease another run took meanwhile", async () => {
     state.rows = [row("o1")];
     state.claimable = ["o1"];

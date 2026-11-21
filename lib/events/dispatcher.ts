@@ -101,7 +101,8 @@ async function deliverOne(webhook: Webhook, row: OutboxRow, now: Date): Promise<
 
   const attempts = row.attempts + 1;
   const failure = await postWebhook(webhook, row);
-  const next = failure ? nextWebhookAttempt(attempts, now) : null;
+  // From the end of this attempt, not the run's start: a long batch would otherwise schedule retries already due.
+  const next = failure ? nextWebhookAttempt(attempts, new Date(Math.max(Date.now(), now.getTime()))) : null;
   const values = !failure
     ? { delivered_at: new Date().toISOString(), attempts, last_error: null }
     : next
