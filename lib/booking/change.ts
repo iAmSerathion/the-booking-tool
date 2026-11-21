@@ -13,7 +13,7 @@ import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
-import { withinLimit } from "./limit";
+import { withinBookingLimit } from "./limit";
 
 // Reschedule and cancel without login, through the booking's token. The pages bind the token on the server; everything
 // else (booking, host, calendar, times) is derived from it again here. A booking that is no longer open (cancelled, past,
@@ -49,7 +49,7 @@ const isOpen = (booking: Confirmation | null): booking is Confirmation => !!book
 export async function rescheduleBooking(token: string, form: RescheduleForm): Promise<RescheduleResult> {
   const booking = await loadConfirmation(token);
   if (!isOpen(booking)) redirect(`/reschedule/${token}`);
-  if (!(await withinLimit(booking.inviteeEmail))) return { ok: false, error: "booking.error.tooMany" };
+  if (!(await withinBookingLimit(booking.bookingId))) return { ok: false, error: "booking.error.tooMany" };
 
   const start = new Date(typeof form.start === "string" ? form.start : Number.NaN);
   const startIso = Number.isNaN(start.getTime()) ? null : start.toISOString();
@@ -141,7 +141,7 @@ export async function cancelBooking(token: string, form: FormData): Promise<void
   const back = `/cancel/${token}`;
   const booking = await loadConfirmation(token);
   if (!isOpen(booking)) redirect(back);
-  if (!(await withinLimit(booking.inviteeEmail))) redirect(`${back}?error=tooMany`);
+  if (!(await withinBookingLimit(booking.bookingId))) redirect(`${back}?error=tooMany`);
 
   // Database first: if this fails, the invitee must not get a cancellation from Google for a booking that still stands.
   const { error } = await createAdminSupabase().rpc("cancel_booking", {

@@ -30,14 +30,25 @@ export function limitBuckets(address: string | null, email: unknown, limit: numb
   ];
 }
 
-// Counts this attempt. Fails closed: a database error counts as over the limit.
-export async function withinLimit(email: unknown): Promise<boolean> {
-  const config = getConfig();
+// Counts one attempt against each bucket. Fails closed: a database error counts as over the limit.
+async function charge(buckets: { key: string; limit: number }[]): Promise<boolean> {
+  const secret = getConfig().schedulerSecret;
   const db = createAdminSupabase();
-  const buckets = limitBuckets(clientAddress(await headers(), config.trustProxyHeaders), email, config.bookingAttemptsPerMinute);
   for (const { key, limit } of buckets) {
-    const { data, error } = await db.rpc("booking_attempt", { p_ip_hash: hashClient(key, config.schedulerSecret), p_limit: limit });
+    const { data, error } = await db.rpc("booking_attempt", { p_ip_hash: hashClient(key, secret), p_limit: limit });
     if (error || data !== true) return false;
   }
   return true;
+}
+
+// For bookSlot: anyone can send any email, so this counts against the client (or email and global) buckets.
+export async function withinLimit(email: unknown): Promise<boolean> {
+  const config = getConfig();
+  return charge(limitBuckets(clientAddress(await headers(), config.trustProxyHeaders), email, config.bookingAttemptsPerMinute));
+}
+
+// For actions behind a booking's token (reschedule, cancel, rebook): only the token holder can fill this bucket. The
+// email and global buckets stay out, or anyone who knows the invitee's email could lock them out of their own booking.
+export async function withinBookingLimit(bookingId: string): Promise<boolean> {
+  return charge([{ key: `booking:${bookingId}`, limit: getConfig().bookingAttemptsPerMinute }]);
 }

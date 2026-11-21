@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { loadConfirmation } from "@/lib/booking/data";
-import { withinLimit } from "@/lib/booking/limit";
+import { withinBookingLimit } from "@/lib/booking/limit";
 import { hashToken, newToken } from "@/lib/booking/token";
 import { createAdminSupabase } from "@/lib/db/admin";
 
@@ -16,7 +16,7 @@ export async function GET(_request: Request, { params }: RouteContext<"/cancel/[
   // page). Encoded, so the token stays one path segment.
   const back = `/confirmed/${encodeURIComponent(token)}`;
   if (!booking) redirect(back);
-  if (booking.state !== "cancelled" || !(await withinLimit(booking.inviteeEmail))) redirect(back);
+  if (booking.state !== "cancelled" || !(await withinBookingLimit(booking.bookingId))) redirect(back);
 
   const link = newToken();
   const { data, error } = await createAdminSupabase().rpc("rebook_link", { p_booking_id: booking.bookingId, p_token_hash: hashToken(link) });

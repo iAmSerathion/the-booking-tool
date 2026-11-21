@@ -66,7 +66,9 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 - Booking attempts are rate limited per client address (`BOOKING_ATTEMPTS_PER_MINUTE`), which is only known behind a
   proxy with `TRUST_PROXY_HEADERS=true`. Without it the limit is per invitee email, plus a global ceiling of 20 times
   that number. A flood of many different emails can still reach the ceiling and pause booking for everyone until it
-  stops, so set `TRUST_PROXY_HEADERS=true` in production behind a proxy that appends the client address.
+  stops, so set `TRUST_PROXY_HEADERS=true` in production behind a proxy that appends the client address. Reschedule,
+  cancel and "book a new time" are limited per booking instead, so nobody who only knows the invitee's email can lock
+  them out of their own booking.
 - If the invitee already has an upcoming booking of the event type, the page gives the same answer as for any other
   failure (its text points to the invitation in their email), so nobody can find out from outside whether an email has
   a booking.
