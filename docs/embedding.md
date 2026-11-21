@@ -17,7 +17,8 @@ In the admin, open **Widgets** (admins only) and fill in:
   `https://www.example.com` are different sites. A widget without sites of its own uses `EMBED_ALLOWED_ORIGINS`.
 
 Switch a widget off to stop bookings at once. Under **Embed code** each widget shows its two snippets with the right
-`APP_URL` and id. **Playground** (admins) lets you try a widget with a prefill before you embed it.
+`APP_URL` and id. **Playground** (admins, or any member under `next dev`) lets you try a widget with a prefill before
+you embed it.
 
 ## 2. Window
 
@@ -46,8 +47,8 @@ language of the dialog's labels. Style the button as you like; the link text is 
 `window.BookingWidget.mount(element, prefill)` returns a handle with `update(prefill)` and `unmount()`, or `null` when
 the element has no valid id. `window.BookingWidget.unmount(element)` removes the section again. Single-page apps call
 `mount` when the element is in the DOM and `unmount` before it goes away. The section loads when it comes near the
-viewport and scrolls its top into view on every booking step; give the element `scroll-margin-top` if a fixed header
-covers it.
+viewport and on each booking step scrolls its top back into view when it is above the viewport; give the element
+`scroll-margin-top` if a fixed header covers it.
 
 ### Prefill
 

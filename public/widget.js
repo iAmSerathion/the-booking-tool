@@ -9,9 +9,9 @@
  *   window.BookingWidget.mount(element, { name, email, company, topic, answers: [{ id, answer }] })
  * The booking fills the element's width and grows with its content; it loads when the element comes near the viewport.
  * The prefill is cleaned and goes only by postMessage to the tool's own origin, never into a URL, attribute or storage.
- * On each booking step the section's top scrolls into view. The element receives "booking-widget:booked" after a
- * booking and "booking-widget:unavailable" when no "ready" arrived within 15 seconds of loading (blocked, switched off
- * or unreachable); both bubble and carry no detail. On "unavailable" the page should show a plain booking link instead.
+ * On each booking step the section's top scrolls back into view when it is above the viewport. The element receives
+ * "booking-widget:booked" after a booking and "booking-widget:unavailable" when no "ready" arrived within 15 seconds of
+ * loading (blocked, switched off or unreachable); both bubble and carry no detail. On "unavailable" the page should show a plain booking link instead.
  *
  * Both frames get the host page's path (location.pathname only) as ?page=, so the tool records where a booking came
  * from. data-locale="de" or "en" on the script tag picks the language of the dialog's labels (default en).
