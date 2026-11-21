@@ -51,6 +51,11 @@ test("a member connects their calendar, picks busy calendars and disconnects", a
     expect(row).toMatchObject({ account_email: member.email, scopes: [calendarScope], status: "ok", primary_calendar_id: member.email });
     // The settings page refreshed the access token on load.
     expect(row!.token_refreshed_at).not.toBeNull();
+    // After the redirect, the callback watched the primary calendar and ran the first sync.
+    await expect.poll(async () => (await fake(`/control/channels?calendar=${encodeURIComponent(member.email)}`, "GET")).items.length).toBe(1);
+    await expect
+      .poll(async () => (await admin().from("calendar_connections").select("channel_id, sync_token").eq("user_id", member.id).single()).data)
+      .toMatchObject({ channel_id: expect.any(String), sync_token: expect.stringMatching(/^seq:/) });
 
     // The calendar list comes from Google; the primary calendar always counts as busy.
     const primary = calendar.getByRole("checkbox", { name: `${member.email} (primary calendar)` });
@@ -69,6 +74,8 @@ test("a member connects their calendar, picks busy calendars and disconnects", a
     expect(await connection(member.id)).toBeNull();
     // The grant was given back to Google too.
     expect(await fake(`/control/granted?email=${encodeURIComponent(member.email)}`, "GET")).toEqual({ scopes: [] });
+    // And the push channel was stopped before that.
+    expect((await fake(`/control/channels?calendar=${encodeURIComponent(member.email)}`, "GET")).items).toEqual([]);
   } finally {
     await removeMember(member.id);
   }
