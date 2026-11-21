@@ -148,8 +148,9 @@ describe("admin", () => {
     const id = "00000000-0000-4000-8000-000000000201";
     const { window, section } = widgetSnippets("https://booking.example.com", id, "de");
     expect(window).toBe(
-      `<script src="https://booking.example.com/widget.js" data-locale="de" defer></script>\n<a href="https://booking.example.com/widget/${id}" data-booking-widget="${id}">Book a time</a>`,
+      `<script src="https://booking.example.com/widget.js" data-locale="de" defer></script>\n<a href="https://booking.example.com/widget/${id}" data-booking-widget="${id}">Termin buchen</a>`,
     );
+    expect(widgetSnippets("https://booking.example.com", id, "en").window).toMatch(/>Book a time<\/a>$/);
     expect(section.split("\n").slice(0, 2)).toEqual([`<script src="https://booking.example.com/widget.js" data-locale="de" defer></script>`, `<div data-booking-section="${id}"></div>`]);
     expect(section).toContain(`document.querySelector('[data-booking-section="${id}"]')`);
     expect(section).toContain("window.BookingWidget.mount(element, {})");
