@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
-import { assertLocalSupabase, baseURL, envFile, googleFakePort, googleFakeUrl, port } from "./tests/e2e/env";
+import { assertLocalSupabase, baseURL, embedBlockedPort, embedOrigin, embedPort, envFile, googleFakePort, googleFakeUrl, port } from "./tests/e2e/env";
 
 // Keys of the local Supabase: `npm run stack:up` (or CI after `supabase start`) writes them to .env.e2e.local.
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -28,6 +28,13 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
+      // The host website for the widget tests, on an allowed and a blocked origin.
+      command: "node tests/e2e/embed-site.mjs",
+      url: `${embedOrigin}/health`,
+      env: { E2E_APP_URL: baseURL, E2E_EMBED_PORT: String(embedPort), E2E_EMBED_BLOCKED_PORT: String(embedBlockedPort) },
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // Production build, so headers and caching match what self-hosters run. Brand and locale are set only at start,
       // which proves they are read at runtime and not baked into the build.
       command: `npm run build && BRAND_NAME="Acme Bookings" DEFAULT_LOCALE=en npx next start --hostname 127.0.0.1 --port ${port}`,
@@ -43,6 +50,8 @@ export default defineConfig({
         GOOGLE_HOSTED_DOMAIN: "",
         ALLOWED_GOOGLE_DOMAINS: "",
         INITIAL_ADMIN_EMAIL: "",
+        // Widgets without origins of their own must not be widened by a developer's .env.local.
+        EMBED_ALLOWED_ORIGINS: "",
         TRUST_PROXY_HEADERS: "",
         // Without a trusted proxy every invitee shares one rate limit bucket, parallel tests included. The limit itself
         // is tested on booking_attempt and limit.ts.
