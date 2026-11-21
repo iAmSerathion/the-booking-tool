@@ -9,6 +9,7 @@ import { addDays, dayStart, safeTimeZone, zonedDay } from "@/lib/core/dates";
 import { createAdminSupabase } from "@/lib/db/admin";
 import { moveEvent } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
+import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
@@ -93,6 +94,14 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
     await moveEvent(access.token, calendar, booking.googleEventId, { start, end, timeZone: availability.timeZone });
   } catch (cause) {
     console.error("booking: event move", cause);
+    // Google may have applied the move and only the answer got lost (5xx after commit, dropped connection): move it back.
+    // A 4xx means Google refused it, so the invitee gets no needless second update then.
+    if (!(cause instanceof GoogleError && cause.status < 500))
+      await moveEvent(access.token, calendar, booking.googleEventId, {
+        start: new Date(booking.startsAt),
+        end: new Date(booking.endsAt),
+        timeZone: availability.timeZone,
+      }).catch((e) => console.error("booking: event move back", e));
     await dropLease(booking.bookingId);
     return notMoved();
   }

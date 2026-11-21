@@ -47,14 +47,17 @@ test("an invitee reschedules through the token link: same booking and event, mov
     await page.getByRole("button", { name: "Move to this time" }).click();
     await expect(alert(page)).toHaveText("Please choose a time first.");
 
-    // Google refuses the move once: nothing changes, and the hold is released so the same time works right after.
+    // Google applies the move but the answer is lost: the event is moved back, nothing changes in the database, and the
+    // hold is released so the same time works right after.
     await times.getByRole("button", { name: "2:00 PM" }).click();
-    await fetch(`${googleFakeUrl}/control/fail-patch?calendar=${encodeURIComponent(host.email)}&count=1`, { method: "POST" });
+    await fetch(`${googleFakeUrl}/control/lose-patch?calendar=${encodeURIComponent(host.email)}&count=1`, { method: "POST" });
     await page.getByRole("button", { name: "Move to this time" }).click();
     await expect(alert(page)).toHaveText("That did not work, your booking was not moved. Please try again.");
     const { data: unchanged } = await admin().from("bookings").select("starts_at, reschedule_count, google_change_until").eq("id", before.id).single();
     expect(unchanged).toMatchObject({ reschedule_count: 0, google_change_until: null });
     expect(iso(unchanged!.starts_at)).toBe(berlin(day, 9));
+    const [movedBack] = await liveEvents(host.email);
+    expect(movedBack).toMatchObject({ id: before.google_event_id, start: { dateTime: berlin(day, 9) }, end: { dateTime: berlin(day, 9, 30) } });
 
     await page.getByRole("button", { name: "Move to this time" }).click();
     await expect(page).toHaveURL(new RegExp(`/confirmed/${token}$`));
@@ -69,7 +72,8 @@ test("an invitee reschedules through the token link: same booking and event, mov
     const [event, ...others] = await liveEvents(host.email);
     expect(others).toEqual([]);
     expect(event).toMatchObject({ id: before.google_event_id, hangoutLink: before.meet_url, start: { dateTime: berlin(day, 14) }, end: { dateTime: berlin(day, 14, 30) } });
-    expect(event.patches).toEqual([{ body: { start: { dateTime: berlin(day, 14), timeZone: zone }, end: { dateTime: berlin(day, 14, 30), timeZone: zone } }, query: { sendUpdates: "all" } }]);
+    const move = (hour: number) => ({ body: { start: { dateTime: berlin(day, hour), timeZone: zone }, end: { dateTime: berlin(day, hour, 30), timeZone: zone } }, query: { sendUpdates: "all" } });
+    expect(event.patches).toEqual([move(14), move(9), move(14)]);
 
     const outbox = await outboxOf(before.id);
     expect(outbox.map((row) => row.type)).toEqual(["booking.created", "booking.rescheduled"]);
