@@ -224,12 +224,15 @@ export async function sendReminderMail(bookingId: string, { stepKey, plannedFor,
 }
 
 // The host moved the booking in Google (calendar sync). The reschedule count stays on such a move, so the send_key
-// "calendar_moved:<booking id>:<new start>" carries the new start: each move goes out once, also when a deferred sync
-// sees it again. To the invitee only, with fresh links; the host made the move. Never throws.
+// "calendar_moved:<booking id>:<previous start>:<new start>" carries both starts: each move goes out once, also when a
+// deferred sync sees it again, and a move back to an earlier time (A->B->C->B) is told again. The new start stays the
+// key's last segment (claim_mail_retries compares it with the booking). shortcut: repeating the same pair (B->C, C->B,
+// B->C) dedupes the third move; a move counter would fix that. To the invitee only, with fresh links; the host made the
+// move. Never throws.
 export function sendCalendarMoveMail(bookingId: string, previous: { startsAt: Date; endsAt: Date }) {
   return sendAll("calendar move", async () => {
     const b = await loadBooking(bookingId);
-    const sendKey = `calendar_moved:${b.id}:${b.startsAt.toISOString()}`;
+    const sendKey = `calendar_moved:${b.id}:${previous.startsAt.toISOString()}:${b.startsAt.toISOString()}`;
     const token = await freshToken(b.id, sendKey);
     if (!token) return [];
     const m = mails(b);
