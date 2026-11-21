@@ -55,7 +55,9 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `website_person_id`) or round robin over all bookable members, where the free member whose last booking from this
   page is oldest wins.
 - `/<slug>` is a member's own page. Unknown or not bookable members get the 404 page.
-- Both offer the default event type (`settings.default_event_type_id`). Times come from the member's availability
+- Both offer the default event type (`settings.default_event_type_id`). With more than one active event type, a row of
+  links above the form switches to another one (`?type=<event type link name>`, e.g. `/?type=discovery-call`); unknown
+  or switched-off types get the 404 page. Booking links and widgets keep their fixed event type. Times come from the member's availability
   windows, buffer, minimum notice, daily maximum and the slot horizon, minus Google busy times. Only members with a
   working calendar connection offer times. Slots start every 30 minutes, whatever the duration.
 - Booking checks everything again on the server, holds the time, creates the Google event (with Meet when the member
@@ -95,6 +97,15 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   has none) plus `APP_URL`, read per request; switched-off and unknown widgets get `'none'`. Every other page keeps
   `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
   the widget and the host page they came from.
+
+## Event types
+
+- Admins manage event types under Event types in the admin: title, link name, description, duration (5 to 480 minutes,
+  steps of 5) and up to 20 booking questions (one choice, several choices or text, each optional or required). The
+  answers are stored with the booking, sent in the outbox payload and shown under Bookings. Questions keep their id
+  when edited, so prefills and stored answers still match; removing one drops its prefill.
+- One active type is the default (what `/` and `/<slug>` book without `?type=`); it cannot be switched off until
+  another type is the default. Event types are never deleted. Switching one off closes its widgets and booking links.
 
 ## Team
 
