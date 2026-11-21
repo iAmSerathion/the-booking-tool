@@ -13,6 +13,10 @@
   background: #fff;
 }
 
+.embedded {
+  min-height: 0;
+}
+
 .frame :focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
