@@ -146,7 +146,7 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   smaller one is due (the smallest until the start); a booking that was moved or cancelled gets none for the old time.
 - Reminders are `booking_jobs`, planned after a booking and re-planned after a reschedule; a cancel or a move cancels
   the open ones in the database.
-- `POST /api/jobs/scheduler` runs due jobs, mail retries and the calendar upkeep (below). Something has to call it
+- `POST /api/jobs/scheduler` runs due jobs, mail retries, the calendar upkeep and the webhooks (below). Something has to call it
   every minute with `Authorization: Bearer <SCHEDULER_SECRET>` (at least 32 characters, compared in constant time):
 
   ```bash
@@ -157,7 +157,77 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `supabase/optional/scheduler_cron.sql` once (pg_cron and pg_net, secrets in Vault); it is not part of the migrations
   and is never applied by default.
 - `SCHEDULER_TEST_CLOCK=true` is for the e2e tests only: the scheduler then honours `x-test-now`, scoped to one booking
-  (`x-test-booking`) or member (`x-test-user`). Config refuses it unless `APP_URL` is localhost, 127.0.0.1 or [::1].
+  (`x-test-booking`: its jobs, mail retries and webhooks) or member (`x-test-user`: calendar upkeep). Config refuses it unless `APP_URL` is localhost, 127.0.0.1 or [::1].
+
+## Webhooks
+
+Set `WEBHOOK_URL` and `WEBHOOK_SECRET` (at least 32 characters) and every booking change is POSTed there as JSON. The
+change and its event are written in one database transaction (`booking_outbox`); the scheduler sends the events.
+
+| Event | When |
+|---|---|
+| `booking.created` | An invitee booked (page, person link, booking link or widget). |
+| `booking.rescheduled` | The invitee moved it (`changed_by: "invitee"`) or the host moved the Google event (`"calendar"`). |
+| `booking.cancelled` | The invitee cancelled or declined the invitation (`"invitee"`), the host cancelled in the admin (`"host"`) or deleted the Google event (`"calendar"`). |
+| `booking.host_changed` | A deactivated member's future bookings were handed to a successor (`"admin"`, with `previous_host_id`). |
+
+Example body (headers: `X-Webhook-Id` = `id`, `X-Webhook-Event` = `type`, `X-Signature`, `User-Agent: the-booking-tool`):
+
+```json
+{
+  "id": "6f1c2a52-0d4e-4c3b-9b7a-2f0e8c1d5a10",
+  "type": "booking.rescheduled",
+  "created_at": "2026-12-01T09:12:44.381Z",
+  "booking": {
+    "id": "0b8e4f3c-7a21-4d6e-8f55-1c2d3e4f5a6b",
+    "state": "booked",
+    "cancelled_by": null,
+    "starts_at": "2026-12-03T14:00:00+00:00",
+    "ends_at": "2026-12-03T14:30:00+00:00",
+    "host": { "id": "c3d4e5f6-0000-4000-8000-000000000001", "name": "Avery Host", "email": "avery@example.com" },
+    "attendee": { "name": "Sam Invitee", "email": "sam@example.com", "company": "Example Inc", "phone": null, "timezone": "Europe/Berlin" },
+    "topic": "Pricing",
+    "answers": [{ "id": "goal", "question": "What is your goal?", "answer": "Growth" }],
+    "event_type": { "id": "d4e5f6a7-0000-4000-8000-000000000002", "slug": "meeting", "title": "Meeting" },
+    "booked_via": "widget",
+    "widget_id": "e5f6a7b8-0000-4000-8000-000000000003",
+    "booking_page": "https://www.example.com/contact",
+    "link": null,
+    "meet_url": "https://meet.google.com/abc-defg-hij",
+    "reschedule_count": 1,
+    "created_at": "2026-12-01T09:00:02+00:00",
+    "previous": { "starts_at": "2026-12-03T09:00:00+00:00", "ends_at": "2026-12-03T09:30:00+00:00" },
+    "changed_by": "invitee"
+  }
+}
+```
+
+`booking` is a snapshot taken when the change happened. `link` is `{id, metadata}` for bookings made through a booking
+link. Cancel events add `reason` (or null) and `changed_by`.
+
+Verify `X-Signature` (`sha256=` + hex HMAC-SHA256 of the raw body with `WEBHOOK_SECRET`) before parsing the body:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+// rawBody: the request body exactly as received (a Buffer or string), not re-serialized JSON.
+export function verifyWebhook(rawBody, signatureHeader, secret) {
+  const expected = Buffer.from(`sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`);
+  const given = Buffer.from(signatureHeader ?? "");
+  return given.length === expected.length && timingSafeEqual(given, expected);
+}
+```
+
+- **Delivery** counts on any 2xx answer within 10 seconds. Redirects are not followed and count as failures.
+- **Retries** after 1, 5 and 30 minutes, 2, 6 and 12 hours; then the event is given up. `last_error` in
+  `booking_outbox` keeps only a short reason (`http 500`, `timeout`, `network error`), never the response body.
+- **Order:** a booking's next event is not sent while an older one of the same booking is still pending, so you see
+  created, rescheduled and cancelled in that order. A given-up event no longer holds the next ones back.
+- **At least once:** if your 2xx answer gets lost, the same event comes again with the same `X-Webhook-Id` and body.
+  Dedupe by `X-Webhook-Id`.
+- **Without `WEBHOOK_URL`** due events are given up (`not configured`), so turning webhooks on later does not replay the
+  history. Events still pending after 72 hours are given up (`expired`).
+- **Retention:** delivered and given-up events are deleted after 30 days, since they hold the invitee's personal data.
 
 ## Calendar sync
 
