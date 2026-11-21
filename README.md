@@ -179,7 +179,7 @@ Example body (headers: `X-Webhook-Id` = `id`, `X-Webhook-Event` = `type`, `X-Sig
 {
   "id": "6f1c2a52-0d4e-4c3b-9b7a-2f0e8c1d5a10",
   "type": "booking.rescheduled",
-  "created_at": "2026-12-01T09:12:44.381Z",
+  "created_at": "2026-12-01T09:12:44.381234+00:00",
   "booking": {
     "id": "0b8e4f3c-7a21-4d6e-8f55-1c2d3e4f5a6b",
     "state": "booked",
@@ -204,7 +204,8 @@ Example body (headers: `X-Webhook-Id` = `id`, `X-Webhook-Event` = `type`, `X-Sig
 }
 ```
 
-`booking` is a snapshot taken when the change happened. `link` is `{id, metadata}` for bookings made through a booking
+Timestamps are ISO 8601 with an offset (Postgres format, e.g. `2026-12-01T09:12:44.381234+00:00`); parse them, do not
+compare them as strings. `booking` is a snapshot taken when the change happened. `link` is `{id, metadata}` for bookings made through a booking
 link. Cancel events add `reason` (or null) and `changed_by`.
 
 Verify `X-Signature` (`sha256=` + hex HMAC-SHA256 of the raw body with `WEBHOOK_SECRET`) before parsing the body:
