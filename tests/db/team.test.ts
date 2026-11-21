@@ -58,8 +58,11 @@ const inDays = (days: number, hour = 10) => {
   return d.toISOString();
 };
 
+// The times addBooking gave each booking, for the plans below.
+const bookingTimes = new Map<string, { starts_at: string; ends_at: string }>();
+
 async function addBooking(client: Client, host: string, starts: string, state: "booked" | "cancelled" = "booked"): Promise<string> {
-  return scalar(
+  const id = await scalar<string>(
     client,
     `insert into public.bookings (event_type_id, host_id, starts_at, ends_at, booked_via, invitee_name, invitee_email,
        google_event_id, meet_url, guest_responses, state, cancelled_by)
@@ -69,6 +72,8 @@ async function addBooking(client: Client, host: string, starts: string, state: "
      returning id`,
     [host, starts, state],
   );
+  bookingTimes.set(id, { starts_at: starts, ends_at: new Date(Date.parse(starts) + 30 * 60_000).toISOString() });
+  return id;
 }
 
 async function addWidget(client: Client, ...hosts: string[]): Promise<string> {
@@ -95,8 +100,9 @@ const rightsSql = "select public.set_person_rights($1, $2::jsonb)";
 const reactivateSql = "select public.reactivate_profile($1)";
 const inviteSql = "select public.invite_profile($1, $2, $3::jsonb)";
 const deactivateSql = "select public.deactivate_profile($1, $2, $3, $4::jsonb)";
-const plan = (...bookings: { id: string; google_event_id?: string; meet_url?: string }[]) =>
-  JSON.stringify({ bookings: bookings.map((b) => ({ google_event_id: `new-${b.id}`, ...b })) });
+// Like lib/team/deactivate.ts: each booking with the times the plan was built from and its new event id.
+const plan = (...bookings: { id: string; google_event_id?: string; meet_url?: string; starts_at?: string }[]) =>
+  JSON.stringify({ bookings: bookings.map((b) => ({ google_event_id: `new-${b.id}`, ...bookingTimes.get(b.id), ...b })) });
 
 describe("team function permissions", () => {
   it("lets only active admins change rights or reactivate", () =>
@@ -283,7 +289,8 @@ describe("deactivate_profile", () => {
         expect(rows).toEqual([
           { id: past, host_id: member, google_event_id: "old-evt", meet_url: "https://meet.example.com/old", guest_responses: { "ada@example.com": "accepted" } },
           { id: future, host_id: successor, google_event_id: `new-${future}`, meet_url: "https://meet.example.com/new", guest_responses: {} },
-          { id: future2, host_id: successor, google_event_id: `new-${future2}`, meet_url: "https://meet.example.com/old", guest_responses: {} },
+          // No link in the plan (Google had not made the Meet yet): the departed member's old link does not stay.
+          { id: future2, host_id: successor, google_event_id: `new-${future2}`, meet_url: null, guest_responses: {} },
           { id: cancelled, host_id: member, google_event_id: "old-evt", meet_url: "https://meet.example.com/old", guest_responses: { "ada@example.com": "accepted" } },
         ]);
         const outbox = await client.query(
@@ -346,6 +353,9 @@ describe("deactivate_profile", () => {
           [[member, unbookable, admin, plan({ id: booking })], "P0002"],
           [[member, successor, admin, plan()], "P0002"],
           [[member, successor, admin, plan({ id: booking }, { id: other })], "P0002"],
+          // Rescheduled after the plan was built (the new event would be at the old time).
+          [[member, successor, admin, plan({ id: booking, starts_at: inDays(4) })], "P0002"],
+          [[member, successor, admin, JSON.stringify({ bookings: [{ id: booking, google_event_id: "new" }] })], "P0002"],
           [[member, successor, admin, plan({ id: booking, google_event_id: "" })], "23514"],
         ] as const) {
           expect((await sqlError(client, deactivateSql, [...args])).code, JSON.stringify(args)).toBe(code);
