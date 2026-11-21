@@ -58,8 +58,11 @@ const inDays = (days: number, hour = 10) => {
   return d.toISOString();
 };
 
+// The times addBooking gave each booking, for the plans below.
+const bookingTimes = new Map<string, { starts_at: string; ends_at: string }>();
+
 async function addBooking(client: Client, host: string, starts: string, state: "booked" | "cancelled" = "booked"): Promise<string> {
-  return scalar(
+  const id = await scalar<string>(
     client,
     `insert into public.bookings (event_type_id, host_id, starts_at, ends_at, booked_via, invitee_name, invitee_email,
        google_event_id, meet_url, guest_responses, state, cancelled_by)
@@ -69,6 +72,8 @@ async function addBooking(client: Client, host: string, starts: string, state: "
      returning id`,
     [host, starts, state],
   );
+  bookingTimes.set(id, { starts_at: starts, ends_at: new Date(Date.parse(starts) + 30 * 60_000).toISOString() });
+  return id;
 }
 
 async function addWidget(client: Client, ...hosts: string[]): Promise<string> {
@@ -95,8 +100,9 @@ const rightsSql = "select public.set_person_rights($1, $2::jsonb)";
 const reactivateSql = "select public.reactivate_profile($1)";
 const inviteSql = "select public.invite_profile($1, $2, $3::jsonb)";
 const deactivateSql = "select public.deactivate_profile($1, $2, $3, $4::jsonb)";
-const plan = (...bookings: { id: string; google_event_id?: string; meet_url?: string }[]) =>
-  JSON.stringify({ bookings: bookings.map((b) => ({ google_event_id: `new-${b.id}`, ...b })) });
+// Like lib/team/deactivate.ts: each booking with the times the plan was built from and its new event id.
+const plan = (...bookings: { id: string; google_event_id?: string; meet_url?: string; starts_at?: string }[]) =>
+  JSON.stringify({ bookings: bookings.map((b) => ({ google_event_id: `new-${b.id}`, ...bookingTimes.get(b.id), ...b })) });
 
 describe("team function permissions", () => {
   it("lets only active admins change rights or reactivate", () =>
@@ -283,7 +289,8 @@ describe("deactivate_profile", () => {
         expect(rows).toEqual([
           { id: past, host_id: member, google_event_id: "old-evt", meet_url: "https://meet.example.com/old", guest_responses: { "ada@example.com": "accepted" } },
           { id: future, host_id: successor, google_event_id: `new-${future}`, meet_url: "https://meet.example.com/new", guest_responses: {} },
-          { id: future2, host_id: successor, google_event_id: `new-${future2}`, meet_url: "https://meet.example.com/old", guest_responses: {} },
+          // No link in the plan (Google had not made the Meet yet): the departed member's old link does not stay.
+          { id: future2, host_id: successor, google_event_id: `new-${future2}`, meet_url: null, guest_responses: {} },
           { id: cancelled, host_id: member, google_event_id: "old-evt", meet_url: "https://meet.example.com/old", guest_responses: { "ada@example.com": "accepted" } },
         ]);
         const outbox = await client.query(
@@ -346,6 +353,9 @@ describe("deactivate_profile", () => {
           [[member, unbookable, admin, plan({ id: booking })], "P0002"],
           [[member, successor, admin, plan()], "P0002"],
           [[member, successor, admin, plan({ id: booking }, { id: other })], "P0002"],
+          // Rescheduled after the plan was built (the new event would be at the old time).
+          [[member, successor, admin, plan({ id: booking, starts_at: inDays(4) })], "P0002"],
+          [[member, successor, admin, JSON.stringify({ bookings: [{ id: booking, google_event_id: "new" }] })], "P0002"],
           [[member, successor, admin, plan({ id: booking, google_event_id: "" })], "23514"],
         ] as const) {
           expect((await sqlError(client, deactivateSql, [...args])).code, JSON.stringify(args)).toBe(code);
@@ -357,8 +367,8 @@ describe("deactivate_profile", () => {
 });
 
 describe("last admin under concurrency", () => {
-  // Two admins act on each other at the same time. The second call passes its admin check, then waits on the
-  // 'team:admins' lock and must fail once the first commits; without the lock both could pass and leave no admin.
+  // Two admins act on each other at the same time. The second call waits on the 'team:admins' lock and must fail once
+  // the first commits (its admin is gone: 42501); without the lock both could pass and leave no admin.
   async function race(call: (self: string, other: string) => [string, unknown[]], role: "authenticated" | "service_role") {
     const setup = await pool.connect();
     const a = await pool.connect();
@@ -390,7 +400,7 @@ describe("last admin under concurrency", () => {
       expect(waiting).toBe(true);
 
       await a.query("commit");
-      expect(await second).toBe("P0002");
+      expect(await second).toBe("42501");
       await b.query("rollback");
       expect(await scalar(setup, "select count(*)::int from public.profiles where id = any($1) and active and is_admin", [ids])).toBe(1);
     } finally {
@@ -406,6 +416,66 @@ describe("last admin under concurrency", () => {
 
   it("lets only one of two mutual deactivations through", () =>
     race((self, other) => [deactivateSql, [other, self, self, plan()]], "service_role"));
+});
+
+describe("admin check under the team lock", () => {
+  // Admins A, B and C. A's call runs first and stays uncommitted; B's call waits on the 'team:admins' lock. A commits,
+  // B was demoted or deactivated by it, and B's request must now be refused as not-admin (42501): the admin check
+  // has to run after the lock, not before it.
+  async function demotedWhileWaiting(
+    first: (a: string, b: string, c: string) => [string, unknown[]],
+    second: (a: string, b: string, c: string) => [string, unknown[]],
+    role: "authenticated" | "service_role",
+  ) {
+    const setup = await pool.connect();
+    const a = await pool.connect();
+    const b = await pool.connect();
+    const ids: string[] = [];
+    try {
+      for (const name of ["lock-a", "lock-b", "lock-c"]) ids.push(await addProfile(setup, `${name}@example.com`, { isAdmin: true }));
+      const [ida, idb, idc] = ids;
+      await a.query("begin");
+      await actAs(a, role, ida);
+      await a.query(...first(ida, idb, idc));
+
+      await b.query("begin");
+      await actAs(b, role, idb);
+      const pidB = await scalar<number>(b, "select pg_backend_pid()");
+      const waiting = sqlError(b, ...second(ida, idb, idc));
+      await expect
+        .poll(() => scalar<boolean>(setup, "select wait_event = 'advisory' from pg_stat_activity where pid = $1", [pidB]), { timeout: 5_000 })
+        .toBe(true);
+      await a.query("commit");
+      expect((await waiting).code).toBe("42501");
+      await b.query("rollback");
+    } finally {
+      await a.query("rollback").catch(() => {});
+      await b.query("rollback").catch(() => {});
+      for (const id of ids) await removeProfile(setup, id);
+      for (const c of [setup, a, b]) c.release();
+    }
+  }
+
+  it("refuses set_person_rights from an admin who was demoted while waiting", () =>
+    demotedWhileWaiting(
+      (_a, b) => [rightsSql, [b, '{"is_admin": false}']],
+      (_a, b) => [rightsSql, [b, '{"is_admin": true}']],
+      "authenticated",
+    ));
+
+  it("refuses the second of two mutual demotions among three admins", () =>
+    demotedWhileWaiting(
+      (_a, b) => [rightsSql, [b, '{"is_admin": false}']],
+      (a) => [rightsSql, [a, '{"is_admin": false}']],
+      "authenticated",
+    ));
+
+  it("refuses deactivate_profile from an actor who was deactivated while waiting", () =>
+    demotedWhileWaiting(
+      (a, b) => [deactivateSql, [b, a, a, plan()]],
+      (a, b) => [deactivateSql, [a, b, b, plan()]],
+      "service_role",
+    ));
 });
 
 const admitSql = "select public.admit_profile($1, $2)";

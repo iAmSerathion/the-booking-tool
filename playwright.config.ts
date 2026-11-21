@@ -16,9 +16,11 @@ export default defineConfig({
   reporter: process.env.CI ? "github" : "list",
   use: { baseURL, trace: "retain-on-failure" },
   projects: [
-    { name: "chromium", testIgnore: /bootstrap\.spec/, use: { ...devices["Desktop Chrome"] } },
+    { name: "chromium", testIgnore: /(bootstrap|team-admins)\.spec/, use: { ...devices["Desktop Chrome"] } },
+    // Changes the seeded admin's right and the website default, so it starts only after every other spec is done.
+    { name: "team-admins", testMatch: /team-admins\.spec/, dependencies: ["chromium"], use: { ...devices["Desktop Chrome"] } },
     // Switches the seeded admins off for a moment, so it starts only after every other spec is done.
-    { name: "bootstrap", testMatch: /bootstrap\.spec/, dependencies: ["chromium"], use: { ...devices["Desktop Chrome"] } },
+    { name: "bootstrap", testMatch: /bootstrap\.spec/, dependencies: ["team-admins"], use: { ...devices["Desktop Chrome"] } },
   ],
   webServer: [
     {
