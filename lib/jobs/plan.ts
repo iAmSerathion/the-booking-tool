@@ -20,6 +20,8 @@ export async function planBookingJobs(bookingId: string, now = new Date()): Prom
     const { error: planError } = await db.rpc("plan_booking_jobs", {
       p_booking_id: bookingId,
       p_jobs: jobs.map((j) => ({ step_key: j.stepKey, run_at: j.runAt.toISOString() })),
+      // A booking moved since the read plans nothing; whoever moved it plans for the new start.
+      p_starts_at: booking.starts_at,
     });
     if (planError) throw planError;
   } catch (cause) {
