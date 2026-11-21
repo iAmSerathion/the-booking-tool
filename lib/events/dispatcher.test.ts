@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 // dispatchOutbox with booking_outbox kept in memory (the pending guard on updates) and fetch against a local server.
 // The claim SQL itself is tested against Postgres in tests/db/outbox.test.ts.
 
-type Row = Record<string, unknown> & { id: string; booking_id: string; attempts: number; next_attempt_at: string };
+type Row = Record<string, unknown> & { id: string; type: string; booking_id: string; payload: unknown; attempts: number; next_attempt_at: string; created_at: string };
 
 const state = vi.hoisted(() => ({
   rows: [] as Row[],
