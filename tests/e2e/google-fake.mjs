@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.GOOGLE_FAKE_PORT ?? 3999);
 
-let granted, invalid, otherAccount, busy, events, failInsert, loseInsert, failPatch, counter, deny, onlyScope, failExchange;
+let granted, invalid, otherAccount, busy, events, failInsert, loseInsert, failPatch, losePatch, counter, deny, onlyScope, failExchange;
 const reset = () => {
   granted = new Map(); // email -> granted scopes
   invalid = new Set(); // emails whose refresh tokens Google no longer accepts
@@ -22,6 +22,7 @@ const reset = () => {
   failInsert = new Map(); // calendar id -> how many of the next event inserts fail with a 503
   loseInsert = new Map(); // calendar id -> how many of the next event inserts are created but answered with a 503
   failPatch = new Map(); // calendar id -> how many of the next event patches fail with a 503
+  losePatch = new Map(); // calendar id -> how many of the next event patches are applied but answered with a 503
   deny = new Set(); // login_hints whose next consent is cancelled
   onlyScope = new Map(); // login_hint -> the only scope the next consent grants
   failExchange = new Set(); // emails whose next code exchange fails
@@ -210,6 +211,11 @@ createServer(async (req, res) => {
       // Merged like Google; every patch is kept with its query, so tests can check sendUpdates and the order of moves.
       const patched = { ...event, ...body, patches: [...(event.patches ?? []), { body, query }] };
       list.set(path.eventId, patched);
+      const lost = losePatch.get(path.calendarId) ?? 0;
+      if (lost > 0) {
+        losePatch.set(path.calendarId, lost - 1);
+        return json(res, 503, { error: { status: "UNAVAILABLE" } });
+      }
       return json(res, 200, patched);
     }
     if (path.eventId && req.method === "DELETE") {
@@ -237,6 +243,11 @@ createServer(async (req, res) => {
   }
   if (url.pathname === "/control/fail-patch" && post) {
     failPatch.set(url.searchParams.get("calendar"), Number(url.searchParams.get("count") ?? 1));
+    return json(res, 200, {});
+  }
+  // The next patches are applied at Google, but the response is lost (a 503 after the commit).
+  if (url.pathname === "/control/lose-patch" && post) {
+    losePatch.set(url.searchParams.get("calendar"), Number(url.searchParams.get("count") ?? 1));
     return json(res, 200, {});
   }
   if (url.pathname === "/control/busy" && post) {
