@@ -14,7 +14,8 @@ export type UpcomingBooking = {
   answers: { question: string; answer: string | string[] }[] | null;
   host: string;
   eventType: string;
-  // From the booking link, if booked through one. Readable under RLS because a link's host is always the booking's host.
+  // From the booking link, if booked through one. Read through booking_link_metadata: a booking handed to a successor
+  // host keeps its link, which the successor cannot read under RLS.
   metadata: Record<string, unknown> | null;
 };
 
@@ -24,18 +25,21 @@ export async function loadUpcomingBookings(): Promise<UpcomingBooking[]> {
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id, starts_at, ends_at, invitee_name, invitee_email, invitee_company, invitee_phone, topic, answers, profiles(name), event_types(title), booking_links(metadata)",
+      "id, starts_at, ends_at, invitee_name, invitee_email, invitee_company, invitee_phone, topic, answers, profiles(name), event_types(title)",
     )
     .eq("state", "booked")
     .gt("starts_at", new Date().toISOString())
     .order("starts_at")
     .limit(200);
   if (error) throw error;
+  const { data: links, error: linkError } = await supabase.rpc("booking_link_metadata", { p_booking_ids: data.map((b) => b.id) });
+  if (linkError) throw linkError;
+  const metadata = new Map((links as { booking_id: string; metadata: Record<string, unknown> }[]).map((l) => [l.booking_id, l.metadata]));
   // One-to-one joins; supabase-js types them as arrays without generated database types.
-  return data.map(({ profiles, event_types, booking_links, ...row }) => ({
+  return data.map(({ profiles, event_types, ...row }) => ({
     ...row,
     host: (profiles as unknown as { name: string }).name,
     eventType: (event_types as unknown as { title: string }).title,
-    metadata: (booking_links as unknown as { metadata: Record<string, unknown> } | null)?.metadata ?? null,
+    metadata: metadata.get(row.id) ?? null,
   }));
 }
