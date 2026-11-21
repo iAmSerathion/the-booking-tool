@@ -67,7 +67,8 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
 
   const access = booking.googleEventId ? await googleAccess(booking.hostId) : null;
   if (!booking.googleEventId || !access?.ok) return notMoved();
-  if (!(await takeLease(booking.bookingId))) return notMoved();
+  const lease = await takeLease(booking.bookingId);
+  if (!lease) return notMoved();
 
   const calendar = availability.primaryCalendarId;
   try {
@@ -82,7 +83,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
         end: new Date(booking.endsAt),
         timeZone: availability.timeZone,
       }).catch((e) => console.error("booking: event move back", e));
-    await dropLease(booking.bookingId);
+    await dropLease(booking.bookingId, lease);
     return notMoved();
   }
 
@@ -100,7 +101,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
       end: new Date(booking.endsAt),
       timeZone: availability.timeZone,
     }).catch((cause) => console.error("booking: event move back", cause));
-    await dropLease(booking.bookingId);
+    await dropLease(booking.bookingId, lease);
     await release();
     // P0002 means the booking is no longer open or the hold expired; only a fresh read can tell which.
     if (!isOpen(await loadConfirmation(token))) redirect(`/reschedule/${token}`);
@@ -109,7 +110,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
     return { ok: false, error: "change.error.notMoved" };
   }
 
-  await dropLease(booking.bookingId);
+  await dropLease(booking.bookingId, lease);
   updateTag(busyCacheTag(booking.hostId));
   // M8 seams: re-plan the booking's jobs and send the change mail here. M9 delivers the outbox row already written.
   redirect(`/confirmed/${token}`);
