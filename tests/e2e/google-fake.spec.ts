@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import { googleFakeUrl } from "./env";
 
@@ -146,4 +148,52 @@ test("events: patch moves an event in free/busy, keeps every patch with its quer
   expect((await patch("missing")).status()).toBe(404);
   await request.delete(`${events}/${created.id}`, { headers: auth });
   expect((await patch(created.id)).status()).toBe(404);
+});
+
+test("sync and channels: watch notifies a loopback address of every change, a sync token lists what changed, a 410 once on request, stop", async ({ request }) => {
+  const calendar = `sync#${Date.now()}@example.com`;
+  const auth = { authorization: `Bearer fake-access-${email}` };
+  const events = `${googleFakeUrl}/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`;
+  const at = (hour: number) => ({ dateTime: `2030-01-09T${String(hour).padStart(2, "0")}:00:00.000Z`, timeZone: "UTC" });
+
+  // A stand-in for the app's webhook route.
+  const notifications: Record<string, string | undefined>[] = [];
+  const receiver = createServer((req, res) => {
+    notifications.push({ id: req.headers["x-goog-channel-id"] as string, token: req.headers["x-goog-channel-token"] as string, state: req.headers["x-goog-resource-state"] as string });
+    res.end();
+  });
+  await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+  const address = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/hook`;
+  try {
+    const watch = (data: Record<string, unknown>) => request.post(`${events}/watch`, { headers: auth, data });
+    expect((await watch({ id: "c0", token: "t0", type: "web_hook", address: "https://hooks.example.com/x" })).status()).toBe(400);
+    const channel = await (await watch({ id: `c-${calendar}`, token: "secret", type: "web_hook", address, params: { ttl: "60" } })).json();
+    expect(channel.resourceId).toBeTruthy();
+    expect(Number(channel.expiration)).toBeGreaterThan(Date.now());
+    await expect.poll(() => notifications).toEqual([{ id: `c-${calendar}`, token: "secret", state: "sync" }]);
+
+    const full = await (await request.get(`${events}?timeMin=2030-01-01T00:00:00Z&showDeleted=true`, { headers: auth })).json();
+    expect(full.items).toEqual([]);
+    const created = await (await request.post(events, { headers: auth, data: { summary: "Sync me", start: at(9), end: at(10) } })).json();
+    await request.post(`${googleFakeUrl}/control/calendar?calendar=${encodeURIComponent(calendar)}&event=${created.id}&action=delete`);
+    await expect.poll(() => notifications.map((n) => n.state)).toEqual(["sync", "exists", "exists"]);
+
+    const changes = await (await request.get(`${events}?syncToken=${full.nextSyncToken}&showDeleted=true`, { headers: auth })).json();
+    expect(changes.items).toEqual([{ id: created.id, status: "cancelled" }]);
+    const none = await (await request.get(`${events}?syncToken=${changes.nextSyncToken}`, { headers: auth })).json();
+    expect(none.items).toEqual([]);
+
+    await request.post(`${googleFakeUrl}/control/sync-gone?calendar=${encodeURIComponent(calendar)}`);
+    expect((await request.get(`${events}?syncToken=${changes.nextSyncToken}`, { headers: auth })).status()).toBe(410);
+    expect((await request.get(`${events}?syncToken=${changes.nextSyncToken}`, { headers: auth })).status()).toBe(200);
+
+    const listed = async () => (await (await request.get(`${googleFakeUrl}/control/channels?calendar=${encodeURIComponent(calendar)}`)).json()).items;
+    expect(await listed()).toHaveLength(1);
+    const stop = (resourceId: string) => request.post(`${googleFakeUrl}/calendar/v3/channels/stop`, { headers: auth, data: { id: `c-${calendar}`, resourceId } });
+    expect((await stop("wrong")).status()).toBe(404);
+    expect((await stop(channel.resourceId)).status()).toBe(204);
+    expect(await listed()).toEqual([]);
+  } finally {
+    receiver.close();
+  }
 });
