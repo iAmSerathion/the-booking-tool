@@ -185,6 +185,28 @@ describe("dispatchOutbox", () => {
     expect(state.rows[0]).toMatchObject({ attempts: 0, delivered_at: null });
   });
 
+  it("stops starting deliveries once its time budget is used; the rest waits for a later run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    // Each POST takes 30 simulated seconds.
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      vi.setSystemTime(Date.now() + 30_000);
+      return new Response(null, { status: 200 });
+    });
+    try {
+      state.rows = [row("o1", "b1"), row("o2", "b2"), row("o3", "b3")];
+      state.claimable = ["o1", "o2", "o3"];
+      // The second POST starts at 30 s (within 40 s) and may finish; the third would start at 60 s, so it is not tried.
+      expect(await dispatchOutbox({ now, budgetMs: 40_000 })).toEqual({ delivered: 2, retry: 0, failed: 0 });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(state.rows[2]).toMatchObject({ attempts: 0, delivered_at: null, given_up_at: null });
+      // No new round is claimed after the budget ran out.
+      expect(state.claims).toHaveLength(1);
+    } finally {
+      fetchSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("without a webhook only asks the claim to give due rows up", async () => {
     state.webhook = null;
     state.rows = [row("o1")];

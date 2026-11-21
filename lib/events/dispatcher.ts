@@ -52,12 +52,16 @@ export async function postWebhook(webhook: Webhook, row: OutboxRow): Promise<str
 
 // Scheduler step. now: the scheduler's clock (simulated in tests) decides what is due and when a retry is; onlyBooking
 // scopes a test run to one booking. Without WEBHOOK_URL the claim gives due rows up instead of returning them.
-export async function dispatchOutbox({ now = new Date(), onlyBooking = null }: { now?: Date; onlyBooking?: string | null } = {}) {
+// budgetMs: wall-clock time (the real clock, not now) after which no new round is claimed and no new POST starts, so
+// minute runs do not pile up; a POST already started may finish (webhookTimeoutMs), keeping a run near 50 s at worst.
+// Rows claimed but not tried keep their short lease and a later run picks them up, without using an attempt.
+export async function dispatchOutbox({ now = new Date(), onlyBooking = null, budgetMs = 40_000 }: { now?: Date; onlyBooking?: string | null; budgetMs?: number } = {}) {
+  const deadline = Date.now() + budgetMs;
   const webhook = getConfig().webhook;
   const db = createAdminSupabase();
   const counts = { delivered: 0, retry: 0, failed: 0 };
   // A claim returns at most one row per booking; claiming again lets a booking's next event follow in the same run.
-  for (let round = 0; round < 10; round++) {
+  for (let round = 0; round < 10 && Date.now() < deadline; round++) {
     const { data, error } = await db.rpc("claim_booking_outbox", {
       p_now: now.toISOString(),
       p_limit: 50,
@@ -70,6 +74,7 @@ export async function dispatchOutbox({ now = new Date(), onlyBooking = null }: {
     if (!webhook || !rows.length) break;
     let delivered = 0;
     for (const row of rows) {
+      if (Date.now() >= deadline) break;
       const result = await deliverOne(webhook, row, now);
       if (result !== "skipped") counts[result]++;
       if (result === "delivered") delivered++;
