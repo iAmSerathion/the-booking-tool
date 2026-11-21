@@ -12,6 +12,9 @@ import { retryDueMails } from "@/lib/mail/send";
 // needs a scope, x-test-booking (jobs, mail retries and webhooks of that booking) or x-test-user (calendar upkeep of that member);
 // steps without their scope are skipped (null). Without the flag the headers are ignored and a normal run happens.
 
+// Webhooks stop starting new POSTs after 40 s (dispatchOutbox budgetMs); this caps the whole run on platforms that honour it.
+export const maxDuration = 60;
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Digests are always 32 bytes, so the compare is constant-time and leaks no length.
 const digest = (value: string) => createHash("sha256").update(value).digest();
