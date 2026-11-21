@@ -23,6 +23,9 @@ GoTrue accepts redirects to `http://localhost:3000/auth/callback`, `http://127.0
 `http://127.0.0.1:3100/auth/callback`, so run the dev server on port 3000 (`npm run dev` does).
 
 Every `stack:up` generates new keys, so copy the keys from `.env.e2e.local` into `.env.local` again after each run.
+`.env.e2e.local` also holds `DATABASE_URL`, the stack's Postgres on `127.0.0.1:54422`, for psql and your own scripts.
+The app does not read it, and `npm run test:db` uses its own database on port 55432 unless `DATABASE_URL` is set in the
+environment.
 There is one stack per machine (compose project `tbt-stack`), shared by all checkouts: `stack:up` in a second clone
 wipes the first clone's data and keys.
 
@@ -56,12 +59,16 @@ DEFAULT_LOCALE=en
 
 `supabase/seed.sql` adds example data only (example.com): `admin.demo@example.com` (admin, not bookable),
 `host.demo@example.com` (bookable, page `/demo-host`), the event type `discovery-call` with one question, and a widget
-"Example site" for the host, embeddable on `https://example.com`. These users have no password and nobody can receive
-mail or own a Google account at example.com, so they cannot be signed in to by hand.
+"Example site" for the host, embeddable on `https://example.com`. The migrations add the default event type `meeting`
+("Meeting", 30 minutes), so the booking pages (`/demo-host` and `/`) list both; "Meeting" is preselected and the list
+above the times switches to the other (`?type=discovery-call`). These users have no password and nobody can receive
+mail or own a Google account at example.com, so they cannot be signed in to by Google; use `npm run dev:login`
+([Try it without Google](#try-it-without-google)).
 
 ### Signing in locally
 
-Login is Google only. The e2e tests sign in with generated magic-link sessions (`tests/e2e/session.ts`). By default
+Login is Google only. The e2e tests sign in with generated magic-link sessions (`tests/e2e/session.ts`), and
+`npm run dev:login` does the same for the dev server ([Try it without Google](#try-it-without-google)). By default
 the stack carries a fake Google client, so "Sign in with Google" in `npm run dev` fails at Google. To sign in by hand,
 create a Google OAuth web client with the redirect URI `http://127.0.0.1:54421/auth/v1/callback`, then start the stack
 with it:
@@ -90,6 +97,7 @@ domain into `ALLOWED_GOOGLE_DOMAINS` to get in as a member.
 (`GOOGLE_FAKE_PORT` moves it) and hands out tokens to anyone, so it is for local trials and tests only. The app uses it
 only when `GOOGLE_FAKE_URL` points at localhost or 127.0.0.1; config refuses anything else. It cannot stand in for the
 Supabase login: GoTrue's Google provider always calls accounts.google.com, so you cannot sign in to the admin this way.
+Use `npm run dev:login` for that (below).
 
 To book a time by hand on the public pages, with the minimal `.env.local` above:
 
@@ -106,6 +114,26 @@ Then open `http://127.0.0.1:3000/demo-host` (or `/`) and book a time. The bookin
 (`http://127.0.0.1:2526/messages?to=<invitee email>`). `npm run dev:calendar` refuses a Supabase or fake that is not on
 localhost or 127.0.0.1. The e2e tests expect the seeded host without a calendar, so run `npm run stack:up` again
 before `npm run test:e2e`.
+
+To open the admin (`/app`) without Google, with the stack and the dev server running:
+
+```bash
+npm run dev:login                          # the seeded admin, admin.demo@example.com
+npm run dev:login -- host.demo@example.com # or any member of the local stack
+```
+
+It prints a one-time URL on `127.0.0.1` (valid for 10 minutes); opening it sets the session cookies and redirects to
+`<APP_URL>/app`. Like the e2e tests it creates a magic-link session with the service role key; the app itself has no
+magic-link login (`/auth/callback` admits Google identities only). It reads the keys from `.env.e2e.local` and
+`APP_URL` from `.env.local` (default `http://127.0.0.1:3000`), and refuses a Supabase URL or `APP_URL` that is not
+localhost, 127.0.0.1 or [::1].
+
+Nothing calls the scheduler locally, so reminders, mail retries, calendar upkeep and webhooks only run when you call it
+once by hand (with `SCHEDULER_SECRET` from `.env.local`):
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer local-scheduler-secret-0123456789abcdef" http://127.0.0.1:3000/api/jobs/scheduler
+```
 
 To watch full bookings without any manual setup, run the booking tests:
 `npx playwright test tests/e2e/booking.spec.ts --project=chromium`.
