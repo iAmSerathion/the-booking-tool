@@ -134,7 +134,8 @@ Nothing calls the scheduler locally, so reminders, mail retries, calendar upkeep
 once by hand (with `SCHEDULER_SECRET` from `.env.local`):
 
 ```bash
-curl -fsS -X POST -H "Authorization: Bearer local-scheduler-secret-0123456789abcdef" http://127.0.0.1:3000/api/jobs/scheduler
+SCHEDULER_SECRET=$(grep '^SCHEDULER_SECRET=' .env.local | cut -d= -f2-)
+curl -fsS -X POST -H "Authorization: Bearer $SCHEDULER_SECRET" http://127.0.0.1:3000/api/jobs/scheduler
 ```
 
 To watch full bookings without any manual setup, run the booking tests:

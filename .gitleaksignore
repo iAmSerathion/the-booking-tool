@@ -1,0 +1,2 @@
+# Placeholder value in a CONTRIBUTING example (local dev only, not a real secret); the example now reads it from .env.local.
+562b1330ae87f7feec5cb3e6016342ddd42c1eb7:CONTRIBUTING.md:curl-auth-header:135
