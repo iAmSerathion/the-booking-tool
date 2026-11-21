@@ -108,8 +108,10 @@ npm run test:db     # database tests against it
 npm run db:lint     # plpgsql_check on the local test database (CI: supabase db lint)
 ```
 
-The e2e tests start two servers: the production build on `127.0.0.1:3100` and a Google fake on `127.0.0.1:3999`
-(`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host). The
+The e2e tests start three servers: the production build on `127.0.0.1:3100`, a Google fake on `127.0.0.1:3999`
+(`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host) and a
+widget host page (`tests/e2e/embed-site.mjs`, test-only) on `127.0.0.1:3101` as the allowed origin and `127.0.0.1:3102`
+as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two ports. The
 fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
 move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
