@@ -58,10 +58,10 @@
   const limits = { name: 200, email: 254, company: 200, topic: 2000, pairs: 20, choices: 30, answer: 500 };
   const answerPattern = /^[a-z][a-z0-9_-]{0,39}$/;
   // Space for a section until the booking reports its height: from 900px element width the two-column layout, below it
-  // one column. The first height the booking reports in the e2e embed page, rounded up to 10px.
+  // one column. The height the booking reports in the e2e host page at 1440px and 390px, rounded up to 10px.
   const twoColumns = 900;
-  const placeholderWide = 760;
-  const placeholderNarrow = 1350;
+  const placeholderWide = 990;
+  const placeholderNarrow = 1610;
   // Like cleanText in lib/core/questions.ts: invisible characters go, other control characters become spaces.
   const invisible = /[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
   const control = /[\u0000-\u001f\u007f-\u009f]/g;

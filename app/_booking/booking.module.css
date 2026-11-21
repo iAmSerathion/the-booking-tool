@@ -17,6 +17,11 @@
   min-height: 0;
 }
 
+/* Inside a widget frame the host page sizes the frame to the root's height, so nothing may sit around it. */
+:global(body):has(.embedded) {
+  margin: 0;
+}
+
 .frame :focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
