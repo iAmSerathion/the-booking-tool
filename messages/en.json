@@ -22,6 +22,7 @@
   "notFound.body": "This page does not exist or the link is no longer valid.",
   "frame.imprint": "Imprint",
   "booking.minutes": "{minutes} minutes",
+  "booking.eventTypes": "Event types",
   "booking.meet": "Google Meet",
   "booking.with": "with {name}",
   "booking.chooseTime": "Choose a time",
