@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // dispatchOutbox with booking_outbox kept in memory (the pending guard on updates) and fetch against a local server.
 // The claim SQL itself is tested against Postgres in tests/db/outbox.test.ts.
@@ -86,6 +86,9 @@ const row = (id: string, bookingId = "b1"): Row => ({
 });
 
 beforeEach(() => {
+  // deliverOne uses the later of the real clock and `now`; pin the real clock to `now` so no test depends on today's date.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(now);
   state.rows = [];
   state.claims = [];
   state.claimable = [];
@@ -94,6 +97,7 @@ beforeEach(() => {
   requests.length = 0;
   answer = 200;
 });
+afterEach(() => vi.useRealTimers());
 
 describe("nextWebhookAttempt", () => {
   it("backs off and then gives up", () => {
@@ -186,7 +190,6 @@ describe("dispatchOutbox", () => {
   });
 
   it("stops starting deliveries once its time budget is used; the rest waits for a later run", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
     // Each POST takes 30 simulated seconds.
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       vi.setSystemTime(Date.now() + 30_000);
@@ -203,7 +206,6 @@ describe("dispatchOutbox", () => {
       expect(state.claims).toHaveLength(1);
     } finally {
       fetchSpy.mockRestore();
-      vi.useRealTimers();
     }
   });
 
