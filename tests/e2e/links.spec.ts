@@ -214,7 +214,7 @@ test("the links page and a link's booking page fit 390px and 1440px without side
   }
 });
 
-test("without JavaScript (before hydration) the link and booking submit buttons stay disabled, so nothing submits as a GET", async ({ browser, baseURL }) => {
+test("without JavaScript (before hydration) the link and booking submit buttons and the calendar stay disabled, so nothing submits as a GET or gets lost", async ({ browser, baseURL }) => {
   const host = await newHost({ name: "Quinn Host" });
   const context = await browser.newContext({ javaScriptEnabled: false, timezoneId: zone, locale: "en-US" });
   try {
@@ -224,6 +224,10 @@ test("without JavaScript (before hydration) the link and booking submit buttons 
     await expect(page.getByRole("button", { name: "Create link" })).toBeDisabled();
     await page.goto(`/${host.slug}`);
     await expect(page.getByRole("button", { name: "Book this time" })).toBeDisabled();
+    // The calendar too: a day clicked before hydration would be lost.
+    const days = page.getByRole("group", { name: "Days with free times" }).getByRole("button");
+    await expect(days.first()).toBeVisible();
+    await expect(days.and(page.locator(":enabled"))).toHaveCount(0);
   } finally {
     await context.close();
     await removeHost(host.id);
