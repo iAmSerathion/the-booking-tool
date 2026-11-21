@@ -218,7 +218,20 @@ export function verifyWebhook(rawBody, signatureHeader, secret) {
   const given = Buffer.from(signatureHeader ?? "");
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
+
+// Replay protection, after the signature check. seen: ids kept for at least 72 hours (a store shared by your instances).
+// On false, answer 2xx without processing again.
+export function shouldProcess(event, seen) {
+  if (Date.now() - Date.parse(event.created_at) > 72 * 60 * 60 * 1000) return false;
+  if (seen.has(event.id)) return false;
+  seen.add(event.id);
+  return true;
+}
 ```
+
+- **Replay protection:** the signature covers the body, which carries `id` (= `X-Webhook-Id`) and `created_at`, so a
+  captured request can only be replayed unchanged. Reject events whose `created_at` is older than 72 hours and remember
+  seen ids for at least 72 hours. Retries end about 21 hours after an event was created; 72 hours is the hard cap.
 
 - **Delivery** counts on any 2xx answer within 10 seconds. Redirects are not followed and count as failures.
 - **Retries** after 1, 5 and 30 minutes, 2, 6 and 12 hours; then the event is given up. `last_error` in
