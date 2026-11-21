@@ -65,11 +65,24 @@ describe("booking mails", () => {
       ].join("\n\n"),
     );
     expect(invitee.html).toContain("Hello Ada &lt;b&gt;Example&lt;/b&gt;,");
+    expect(invitee.html).toContain('<a href="https://book.example.com/reschedule/tok">');
+    expect(invitee.html).toContain('<a href="https://meet.google.com/abc-defg-hij">');
 
     const host = byKey(`host_notice:${id}`);
     expect(host.subject).toBe("New booking: Ada <b>Example</b>, Monday, January 7, 2030, 10:00 AM to 10:30 AM (Europe/Berlin (GMT+1))");
     expect(host.text).toContain("Phone: +1 555 0100\nTopic: Pricing\n\nTeam size?: 1-10, 11-50\n\nAll bookings: https://book.example.com/app/bookings");
     expect(host.text).not.toContain("Company:");
+  });
+
+  it("never link a URL the invitee typed, in the invitee's mail or the host's", async () => {
+    state.row = { ...state.row, invitee_name: "Please verify at https://evil.example.com/login", topic: "https://evil.example.com/topic" };
+    state.row.answers = [{ question: "Site?", answer: "https://evil.example.com/answer" }];
+    await sendConfirmationMails(id, "tok");
+    for (const mail of state.sent) {
+      expect(mail.html).toContain("https://evil.example.com/");
+      expect(mail.html).not.toContain('href="https://evil');
+    }
+    expect(byKey(`host_notice:${id}`).html).toContain('<a href="https://book.example.com/app/bookings">');
   });
 
   it("drop the Meet and invitation lines when the booking has neither", async () => {
@@ -104,6 +117,7 @@ describe("booking mails", () => {
     expect(text).toContain("Riley Host cancelled your booking.");
     expect(text).not.toContain("Reason:");
     const token = /cancel\/([\w-]+)\/new/.exec(text)![1];
+    expect(byKey(`cancelled:${id}`).html).toContain(`<a href="https://book.example.com/cancel/${token}/new">`);
     expect(state.tokens).toEqual([{ token_hash: hashToken(token), booking_id: id }]);
   });
 
