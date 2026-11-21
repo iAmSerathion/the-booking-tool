@@ -26,8 +26,7 @@ export default async function EventTypesPage() {
       <section aria-labelledby="new-type-heading" className={styles.section}>
         <h2 id="new-type-heading">New event type</h2>
         <ActionForm action={saveEventType} submit="Create event type">
-          {/* Keyed by the count, so the fields start empty again after a type was created (the status line stays). */}
-          <EventTypeFields key={eventTypes.length} prefix="new" />
+          <EventTypeFields prefix="new" />
         </ActionForm>
       </section>
 

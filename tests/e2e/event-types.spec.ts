@@ -6,8 +6,8 @@ import { admin, adminEmail, hostEmail, signInAs } from "./session";
 
 // Event types end to end: an admin creates one with booking questions, an invitee picks it on a member page, must
 // answer the required question and books; the answers reach the booking, the outbox and the admin Bookings list.
-// Switched off, the type is no longer offered. Each run uses its own type (unique link name) and its own host; types
-// are never deleted (bookings refer to them), so the test switches its type off at the end. The default event type is
+// Switched off, the type is no longer offered. Each run uses its own type (unique link name) and its own host, and
+// deletes both at the end (the host first, with the booking that refers to the type). The default event type is
 // never changed here: other specs book it on "/" (set_default_event_type is covered by the DB and action tests).
 
 const card = (page: Page, title: string) => page.getByRole("listitem", { name: title, exact: true });
@@ -18,6 +18,11 @@ test("an admin creates an event type with questions; an invitee picks it, must a
   const slug = `e2e-${suffix}`;
   const title = `Workshop ${suffix}`;
   const invitee = await newPage(browser);
+  // Switched off, there while the page loads and gone before the create: the type count is the same afterwards, as
+  // when another admin (or a parallel test) removes a type meanwhile. The new form must still start empty again.
+  const spare = `spare-${suffix}`;
+  const { error } = await admin().from("event_types").insert({ slug: spare, title: `Spare ${suffix}`, duration_minutes: 30, active: false });
+  if (error) throw error;
   try {
     await signInAs(context, baseURL, adminEmail);
     await page.goto("/app");
@@ -29,6 +34,8 @@ test("an admin creates an event type with questions; an invitee picks it, must a
     await expect(meeting).toContainText("On · Default");
     await expect(meeting.getByRole("button", { name: /Switch off/ })).toHaveCount(0);
     await expect(meeting).toContainText("The default event type cannot be switched off.");
+    await expect(card(page, `Spare ${suffix}`)).toBeVisible();
+    await admin().from("event_types").delete().eq("slug", spare);
 
     const form = page.getByRole("region", { name: "New event type" });
     await form.getByLabel("Title").fill(title);
@@ -144,9 +151,9 @@ test("an admin creates an event type with questions; an invitee picks it, must a
       await expect(invitee.getByRole("heading", { level: 1 }), path).toHaveText("Page not found");
     }
   } finally {
-    await admin().from("event_types").update({ active: false }).eq("slug", slug);
     await invitee.context().close();
     await removeHost(host.id);
+    await admin().from("event_types").delete().in("slug", [slug, spare]);
   }
 });
 
