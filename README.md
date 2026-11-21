@@ -145,16 +145,34 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   smaller one is due (the smallest until the start); a booking that was moved or cancelled gets none for the old time.
 - Reminders are `booking_jobs`, planned after a booking and re-planned after a reschedule; a cancel or a move cancels
   the open ones in the database.
-- `POST /api/jobs/scheduler` runs due jobs and mail retries. Something has to call it every minute with the secret:
+- `POST /api/jobs/scheduler` runs due jobs, mail retries and the calendar upkeep (below). Something has to call it
+  every minute with `Authorization: Bearer <SCHEDULER_SECRET>` (at least 32 characters, compared in constant time):
 
   ```bash
   curl -fsS -X POST -H "Authorization: Bearer $SCHEDULER_SECRET" "$APP_URL/api/jobs/scheduler"
   ```
 
   Any cron works (system cron, a container, your host's scheduled jobs). On Supabase you can instead run
-  `supabase/optional/scheduler_cron.sql` once (pg_cron and pg_net, secrets in Vault); it is not part of the migrations.
+  `supabase/optional/scheduler_cron.sql` once (pg_cron and pg_net, secrets in Vault); it is not part of the migrations
+  and is never applied by default.
 - `SCHEDULER_TEST_CLOCK=true` is for the e2e tests only: the scheduler then honours `x-test-now`, scoped to one booking
   (`x-test-booking`) or member (`x-test-user`). Config refuses it unless `APP_URL` is localhost, 127.0.0.1 or [::1].
+
+## Calendar sync
+
+- Changes made in a host's Google calendar reach the booking: the host moving the event moves the booking (the
+  reminders are planned anew, and the invitee gets a mail with the new time and fresh links); the host deleting the
+  event cancels the booking as the host (the invitee is told); the invitee declining the invitation cancels it like the
+  cancel link (the event is removed, both sides are told, with the same mails, so never twice). Other guests' answers
+  and the host's own decline are only stored. Past bookings are not cancelled from the calendar.
+- Events the database does not know are skipped, including events with this tool's `booking_id` property from another
+  install sharing the calendar. While an invitee's reschedule is moving the event, changes to that booking wait for the
+  next sync. Each event is applied on its own; one that fails is logged and skipped.
+- Google pushes changes to `$APP_URL/api/google/calendar-webhook` through a channel per member, created right after
+  connecting and renewed daily by the scheduler; disconnecting or deactivating a member stops it. Google only notifies
+  **https** addresses with a valid certificate, so `APP_URL` must be public https for push. The route answers at once
+  and checks the channel id and secret (stored as a hash). Without push (plain http, or Google refused the channel,
+  retried hourly) the scheduler still syncs every connected calendar every 15 minutes.
 
 ## Checks
 
@@ -173,8 +191,9 @@ test-only) that takes the app's mail on `127.0.0.1:2525` and hands it to tests o
 (`tests/e2e/google-fake.mjs`, test-only; the app uses it only when `GOOGLE_FAKE_URL` points at a loopback host) and a
 widget host page (`tests/e2e/embed-site.mjs`, test-only) on `127.0.0.1:3101` as the allowed origin and `127.0.0.1:3102`
 as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two ports. The
-fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
-move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
+fake covers the calendar connection (consent, tokens, calendar list, free/busy), events (insert with Meet, list,
+move, delete), incremental sync (sync tokens, a 410 on request) and push channels, which notify the app (loopback
+addresses only) on every change; its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
 of skipping logged-in tests. Specs that change the seeded admin or the website default run in their own Playwright
 projects (`team-admins`, then `bootstrap`) after all others. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
