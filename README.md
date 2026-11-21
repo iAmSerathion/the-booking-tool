@@ -55,7 +55,9 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `website_person_id`) or round robin over all bookable members, where the free member whose last booking from this
   page is oldest wins.
 - `/<slug>` is a member's own page. Unknown or not bookable members get the 404 page.
-- Both offer the default event type (`settings.default_event_type_id`). Times come from the member's availability
+- Both offer the default event type (`settings.default_event_type_id`). With more than one active event type, a row of
+  links above the form switches to another one (`?type=<event type link name>`, e.g. `/?type=discovery-call`); unknown
+  or switched-off types get the 404 page. Booking links and widgets keep their fixed event type. Times come from the member's availability
   windows, buffer, minimum notice, daily maximum and the slot horizon, minus Google busy times. Only members with a
   working calendar connection offer times. Slots start every 30 minutes, whatever the duration.
 - Booking checks everything again on the server, holds the time, creates the Google event (with Meet when the member
@@ -96,6 +98,31 @@ Members sign in with Google through Supabase Auth; there is no password or magic
   `frame-ancestors 'none'` and `X-Frame-Options: DENY`. Bookings through a widget are stored with `booked_via` widget,
   the widget and the host page they came from.
 
+## Event types
+
+- Admins manage event types under Event types in the admin: title, link name, description, duration (5 to 480 minutes,
+  steps of 5) and up to 20 booking questions (one choice, several choices or text, each optional or required). The
+  answers are stored with the booking, sent in the outbox payload and shown under Bookings. Questions keep their id
+  when edited, so prefills and stored answers still match; removing one drops its prefill.
+- One active type is the default (what `/` and `/<slug>` book without `?type=`); it cannot be switched off until
+  another type is the default. Event types are never deleted. Switching one off closes its widgets and booking links.
+
+## Team
+
+- Team in the admin lists every member with their booking page. Admins make members admin or bookable, change link
+  names (the old `/<slug>` stops working; reserved words are the app's routes), invite members by their Google account
+  email, reactivate deactivated members and choose who gets bookings from `/` (one person or round robin). At least
+  one active member always stays an admin.
+- An invite creates the account and profile; no mail is sent, so the admin tells the person to sign in at
+  `<APP_URL>/login`. Invited members get in whatever `ALLOWED_GOOGLE_DOMAINS` says; with `GOOGLE_HOSTED_DOMAIN` set,
+  only emails of that domain can be invited. New members start not bookable until they connect a calendar.
+- Deactivating a member hands everything to a successor: their upcoming bookings get new events in the successor's
+  calendar (invitees get a new invitation with a new confirmation link, and the old event is cancelled), their widgets
+  and website bookings move, and their Google connection is revoked and removed. The successor must be bookable with
+  a connected calendar when there is anything to take over. If Google or the database refuses, the new events are
+  deleted again and nothing changes. Deactivated members cannot sign in and their booking page is gone; reactivating
+  them gives nothing back.
+
 ## Checks
 
 ```bash
@@ -115,7 +142,8 @@ as the blocked one; `E2E_EMBED_PORT` and `E2E_EMBED_BLOCKED_PORT` move these two
 fake covers the calendar connection (consent, tokens, calendar list, free/busy) and events (insert with Meet, list,
 move, delete); its state is kept per email and calendar, so parallel tests do not share it. It cannot stand in for the Supabase
 login: GoTrue's Google provider always calls accounts.google.com. Without `.env.e2e.local` the e2e run fails instead
-of skipping logged-in tests. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
+of skipping logged-in tests. Specs that change the seeded admin or the website default run in their own Playwright
+projects (`team-admins`, then `bootstrap`) after all others. In CI the `e2e` job uses `supabase start` and writes the same file from `supabase status`.
 
 ## License
 

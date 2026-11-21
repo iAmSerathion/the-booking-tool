@@ -158,3 +158,13 @@
 .playgroundSection {
   min-height: 12rem;
 }
+
+/* Event types: one box per question in the questions builder. */
+.question {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 0.5rem;
+}

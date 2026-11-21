@@ -13,6 +13,7 @@ import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
+import { dropLease, takeLease } from "./lease";
 import { withinBookingLimit } from "./limit";
 
 // Reschedule and cancel without login, through the booking's token. The pages bind the token on the server; everything
@@ -22,27 +23,6 @@ import { withinBookingLimit } from "./limit";
 // Untyped on purpose: it comes straight from the browser.
 export type RescheduleForm = { start?: unknown; timeZone?: unknown };
 export type RescheduleResult = { ok: false; error: MessageKey; slots?: PublicSlot[] };
-
-// While google_change_until lies in the future, the calendar sync (M8) ignores Google changes to the booking, and a
-// second change of the same booking waits. hold_slot does not lock the booking itself: without this, two reschedules of
-// one booking could move the Google event in one order and commit in the other.
-const leaseSeconds = 120;
-
-async function takeLease(bookingId: string): Promise<boolean> {
-  const now = new Date();
-  const { data, error } = await createAdminSupabase()
-    .from("bookings")
-    .update({ google_change_until: new Date(now.getTime() + leaseSeconds * 1000).toISOString() })
-    .eq("id", bookingId)
-    .or(`google_change_until.is.null,google_change_until.lt.${now.toISOString()}`)
-    .select("id");
-  return !error && data.length === 1;
-}
-
-async function dropLease(bookingId: string) {
-  const { error } = await createAdminSupabase().from("bookings").update({ google_change_until: null }).eq("id", bookingId);
-  if (error) console.error("booking: lease release", error);
-}
 
 const isOpen = (booking: Confirmation | null): booking is Confirmation => !!booking && bookingChange(booking, new Date()) === "open";
 
@@ -87,7 +67,8 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
 
   const access = booking.googleEventId ? await googleAccess(booking.hostId) : null;
   if (!booking.googleEventId || !access?.ok) return notMoved();
-  if (!(await takeLease(booking.bookingId))) return notMoved();
+  const lease = await takeLease(booking.bookingId);
+  if (!lease) return notMoved();
 
   const calendar = availability.primaryCalendarId;
   try {
@@ -102,7 +83,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
         end: new Date(booking.endsAt),
         timeZone: availability.timeZone,
       }).catch((e) => console.error("booking: event move back", e));
-    await dropLease(booking.bookingId);
+    await dropLease(booking.bookingId, lease);
     return notMoved();
   }
 
@@ -120,7 +101,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
       end: new Date(booking.endsAt),
       timeZone: availability.timeZone,
     }).catch((cause) => console.error("booking: event move back", cause));
-    await dropLease(booking.bookingId);
+    await dropLease(booking.bookingId, lease);
     await release();
     // P0002 means the booking is no longer open or the hold expired; only a fresh read can tell which.
     if (!isOpen(await loadConfirmation(token))) redirect(`/reschedule/${token}`);
@@ -129,7 +110,7 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
     return { ok: false, error: "change.error.notMoved" };
   }
 
-  await dropLease(booking.bookingId);
+  await dropLease(booking.bookingId, lease);
   updateTag(busyCacheTag(booking.hostId));
   // M8 seams: re-plan the booking's jobs and send the change mail here. M9 delivers the outbox row already written.
   redirect(`/confirmed/${token}`);

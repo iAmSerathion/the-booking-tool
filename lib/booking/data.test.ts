@@ -57,7 +57,8 @@ beforeEach(() => {
   settings = { website_mode: "round_robin", default_event_type_id: typeId };
   db.tables = {
     settings: () => ({ data: Object.entries(settings).map(([key, value]) => ({ key, value })), error: null }),
-    event_types: (f) => ({ data: [meeting, { ...meeting, id: "t2", slug: "discovery-call" }].filter((t) => has(f, "id") === t.id || has(f, "slug") === t.slug), error: null }),
+    // The general and member pages read every active type; links and widgets one by id.
+    event_types: (f) => ({ data: [{ ...meeting, id: "t2", slug: "discovery-call", title: "Discovery call" }, meeting].filter((t) => !has(f, "id") || has(f, "id") === t.id), error: null }),
     profiles: (f) => ({ data: people.filter((p) => !has(f, "slug") || has(f, "slug") === p.slug), error: null }),
   };
 });
@@ -109,6 +110,10 @@ describe("loadContext", () => {
         { id: "h2", name: "Blake Host", meetAuto: false },
       ],
       eventType: { id: typeId, slug: "meeting", title: "Meeting", description: null, durationMinutes: 30, questions: [] },
+      eventTypes: [
+        { slug: "meeting", title: "Meeting", durationMinutes: 30 },
+        { slug: "discovery-call", title: "Discovery call", durationMinutes: 30 },
+      ],
     });
     const profiles = db.queries.find(([table]) => table === "profiles")![1];
     expect(profiles).toEqual(expect.arrayContaining([["eq", "active", true], ["eq", "bookable", true]]));

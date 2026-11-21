@@ -102,6 +102,10 @@ export type NewEvent = {
   timeZone: string;
   attendees: { email: string; displayName?: string }[];
   meet: boolean;
+  // Another event id than googleEventId(bookingId), for a booking that moves to another calendar: the invitee's calendar
+  // still holds the old event under the old id, and Google answers 409 in a calendar that ever held it. Also the Meet
+  // request id, so Google does not take it for a repeat of the old request.
+  eventId?: string;
 };
 
 type EventResponse = {
@@ -112,6 +116,31 @@ type EventResponse = {
 };
 
 const eventsUrl = (calendarId: string) => `${googleUrls.calendar()}/calendars/${encodeURIComponent(calendarId)}/events`;
+
+// Ids of the booking events (with the booking id property) in a calendar that start at or after `from`.
+export async function listBookingEvents(accessToken: string, calendarId: string, from: Date): Promise<string[]> {
+  const ids: string[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      timeMin: from.toISOString(),
+      singleEvents: "true",
+      maxResults: "2500",
+      fields: "items(id,status,start,extendedProperties),nextPageToken",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const response = await fetch(`${eventsUrl(calendarId)}?${params}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+    type Item = { id: string; status?: string; start?: { dateTime?: string }; extendedProperties?: { private?: Record<string, string> } };
+    const data = (await response.json().catch(() => ({}))) as { items?: Item[]; nextPageToken?: string; error?: { status?: string } };
+    if (!response.ok) throw new GoogleError(data.error?.status ?? "events_list", response.status);
+    for (const item of data.items ?? [])
+      // timeMin also returns events that started before `from` and still run.
+      if (item.status !== "cancelled" && item.extendedProperties?.private?.[bookingIdProperty] && Date.parse(item.start?.dateTime ?? "") >= from.getTime())
+        ids.push(item.id);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return ids;
+}
 
 // The event id we choose for a booking: its UUID without dashes, which is valid base32hex (a-v, 0-9) for Google. Knowing
 // it lets the caller delete the event after a lost insert response, and Google answers a repeated id with 409 instead of
@@ -126,7 +155,7 @@ export async function createEvent(accessToken: string, calendarId: string, event
     method: "POST",
     headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
     body: JSON.stringify({
-      id: googleEventId(event.bookingId),
+      id: event.eventId ?? googleEventId(event.bookingId),
       summary: event.summary,
       description: event.description,
       start: { dateTime: event.start.toISOString(), timeZone: event.timeZone },
@@ -135,7 +164,7 @@ export async function createEvent(accessToken: string, calendarId: string, event
       guestsCanModify: false,
       reminders: { useDefault: true },
       extendedProperties: { private: { [bookingIdProperty]: event.bookingId } },
-      ...(event.meet ? { conferenceData: { createRequest: { requestId: event.bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
+      ...(event.meet ? { conferenceData: { createRequest: { requestId: event.eventId ?? event.bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
     }),
     cache: "no-store",
   });

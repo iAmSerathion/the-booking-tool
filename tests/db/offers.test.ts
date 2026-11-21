@@ -142,6 +142,7 @@ describe("admin functions", () => {
       const calls = [
         [saveEventType, [null, "intro", "Intro", null, 30, "[]"]],
         ["select public.set_event_type_active($1, false)", [eventType]],
+        ["select public.set_default_event_type($1)", [eventType]],
         [saveWidget, [null, "W", "person", [host], eventType, []]],
         ["select public.set_booking_widget_active($1, false)", [widget]],
         ["select public.set_website_bookings('person', $1)", [admin]],
@@ -221,6 +222,21 @@ describe("event types", () => {
       expect((await sqlError(client, "select public.set_event_type_active($1, false)", [eventType])).code).toBe("23514");
       await client.query("select public.set_event_type_active($1, true)", [eventType]);
       expect((await sqlError(client, "select public.set_event_type_active($1, true)", [crypto.randomUUID()])).code).toBe("P0002");
+    }));
+
+  it("admins choose an active default; the old default can then be switched off", () =>
+    rollback(async (client) => {
+      const { admin, eventType } = await team(client);
+      await actAs(client, "authenticated", admin);
+      const id = await scalar<string>(client, saveEventType, [null, "intro", "Intro", null, 30, "[]"]);
+      await client.query("select public.set_default_event_type($1)", [id]);
+      expect(await defaultEventType(client)).toBe(id);
+      expect((await sqlError(client, "select public.set_event_type_active($1, false)", [id])).code).toBe("23514");
+      await client.query("select public.set_event_type_active($1, false)", [eventType]);
+      const off = await sqlError(client, "select public.set_default_event_type($1)", [eventType]);
+      expect(off).toEqual({ code: "P0002", message: "This event type does not exist or is switched off." });
+      expect((await sqlError(client, "select public.set_default_event_type($1)", [crypto.randomUUID()])).code).toBe("P0002");
+      expect(await defaultEventType(client)).toBe(id);
     }));
 });
 

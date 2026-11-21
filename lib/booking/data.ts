@@ -32,16 +32,17 @@ export type BookingContext = {
   prefill?: Prefill;
   widgetId?: string;
   embedOrigins?: string[];
+  // "/" and "/<slug>" only: the active event types an invitee can switch between (?type=<slug>).
+  eventTypes?: { slug: string; title: string; durationMinutes: number }[];
 };
 // What the browser gets per free time.
 export type PublicSlot = { start: string; end: string };
 
 const slugPattern = /^[a-z0-9-]{1,60}$/;
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const settingString = (value: unknown) => (typeof value === "string" ? value : null);
 
-// Null when the page does not exist: unknown or unbookable slug, unknown or inactive event type, or no default event
-// type. The general page with nobody bookable still exists; it just has no hosts and so no free times.
+// Null when the page does not exist: unknown or unbookable slug, unknown or inactive event type, or no active default
+// event type. The general page with nobody bookable still exists; it just has no hosts and so no free times.
 export async function loadContext(ref: ChannelRef): Promise<BookingContext | null> {
   if (ref.kind === "link") return loadLinkContext(ref.token);
   if (ref.kind === "widget") return loadWidgetContext(ref.id);
@@ -53,18 +54,18 @@ export async function loadContext(ref: ChannelRef): Promise<BookingContext | nul
   if (error) throw error;
   const settings = new Map((rows ?? []).map((row) => [row.key as string, row.value as unknown]));
 
-  const types = db.from("event_types").select(eventTypeColumns).eq("active", true);
   const defaultId = settingString(settings.get("default_event_type_id"));
-  if (ref.eventType === undefined && !uuidPattern.test(defaultId ?? "")) return null;
   const hosts = db.from("profiles").select("id, name, meet_auto").eq("active", true).eq("bookable", true).order("name").order("id");
 
-  const [type, people] = await Promise.all([
-    (ref.eventType === undefined ? types.eq("id", defaultId!) : types.eq("slug", ref.eventType)).maybeSingle(),
+  const [types, people] = await Promise.all([
+    db.from("event_types").select(eventTypeColumns).eq("active", true).order("title").order("id"),
     ref.kind === "person" ? hosts.eq("slug", ref.slug) : hosts,
   ]);
-  if (type.error) throw type.error;
+  if (types.error) throw types.error;
   if (people.error) throw people.error;
-  if (!type.data) return null;
+  const active = types.data ?? [];
+  const type = active.find((t) => (ref.eventType === undefined ? t.id === defaultId : t.slug === ref.eventType));
+  if (!type) return null;
 
   let list: BookingHost[] = (people.data ?? []).map((p) => ({ id: p.id, name: p.name, meetAuto: p.meet_auto }));
   if (ref.kind === "person" && list.length === 0) return null;
@@ -72,7 +73,13 @@ export async function loadContext(ref: ChannelRef): Promise<BookingContext | nul
   const chosen = settingString(settings.get("website_person_id"));
   if (ref.kind === "page" && settings.get("website_mode") === "person" && list.some((h) => h.id === chosen)) list = list.filter((h) => h.id === chosen);
 
-  return { via: ref.kind === "page" ? "page" : "person_link", hosts: list, eventType: toEventType(type.data) };
+  // The switcher on the page: every active type, the default one first.
+  const eventTypes = [...active.filter((t) => t.id === defaultId), ...active.filter((t) => t.id !== defaultId)].map((t) => ({
+    slug: t.slug,
+    title: t.title,
+    durationMinutes: t.duration_minutes,
+  }));
+  return { via: ref.kind === "page" ? "page" : "person_link", hosts: list, eventType: toEventType(type), eventTypes };
 }
 
 const eventTypeColumns = "id, slug, title, description, duration_minutes, questions";
