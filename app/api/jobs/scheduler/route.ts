@@ -13,6 +13,7 @@ import { retryDueMails } from "@/lib/mail/send";
 // steps without their scope are skipped (null). Without the flag the headers are ignored and a normal run happens.
 
 // Webhooks stop starting new POSTs after 40 s (dispatchOutbox budgetMs); this caps the whole run on platforms that honour it.
+// A run cut off mid-POST loses nothing: the row is retried after its lease, without using an attempt.
 export const maxDuration = 60;
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
