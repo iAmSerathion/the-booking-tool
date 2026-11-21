@@ -10,7 +10,8 @@ Requirements: Node 24+ (`engines` in `package.json`) and Docker.
 ```bash
 npm ci
 npm run stack:up             # local Supabase on 127.0.0.1, writes .env.e2e.local
-cp .env.example .env.local   # fill in the values (see below); Supabase URL and keys are in .env.e2e.local
+# create .env.local from the minimal block below (copying all of .env.example also works,
+# but leaves you to fill every key); the Supabase URL and keys are in .env.e2e.local
 npm run dev                  # http://127.0.0.1:3000, bound to 127.0.0.1 only
 npm run stack:down           # stop it and delete its data
 ```
@@ -122,7 +123,8 @@ npm run dev:login                          # the seeded admin, admin.demo@exampl
 npm run dev:login -- host.demo@example.com # or any member of the local stack
 ```
 
-It prints a one-time URL on `127.0.0.1` (valid for 10 minutes); opening it sets the session cookies and redirects to
+It prints a one-time URL on its own random `127.0.0.1` port and keeps running until you open it (or 10 minutes pass),
+then exits; run it in its own terminal and do not pipe it through `tail`. Opening the URL sets the session cookies and redirects to
 `<APP_URL>/app`. Like the e2e tests it creates a magic-link session with the service role key; the app itself has no
 magic-link login (`/auth/callback` admits Google identities only). It reads the keys from `.env.e2e.local` and
 `APP_URL` from `.env.local` (default `http://127.0.0.1:3000`), and refuses a Supabase URL or `APP_URL` that is not

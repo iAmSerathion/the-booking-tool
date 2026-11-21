@@ -49,7 +49,7 @@ node tests/e2e/google-fake.mjs   # terminal 1: stands in for Google Calendar
 node tests/e2e/smtp-sink.mjs     # terminal 2: catches the mails
 npm run dev                      # terminal 3: http://127.0.0.1:3000 (bound to 127.0.0.1 only)
 npm run dev:calendar             # connects the seeded host to the Google fake
-npm run dev:login                # prints a one-time URL that signs you in to /app as the seeded admin
+npm run dev:login                # own terminal: prints a one-time URL for /app, waits until it is opened
 npm run stack:down               # stop the stack and delete its data
 ```
 
