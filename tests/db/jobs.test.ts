@@ -52,9 +52,14 @@ async function jobs(client: Client, bookingId: string): Promise<Job[]> {
   return rows;
 }
 
-const planSql = "select public.plan_booking_jobs($1, $2::jsonb) as n";
-const plan = (client: Client, bookingId: string, steps: [string, string][]) =>
-  scalar<number>(client, planSql, [bookingId, JSON.stringify(steps.map(([step_key, run_at]) => ({ step_key, run_at })))]);
+const planSql = "select public.plan_booking_jobs($1, $2::jsonb, $3) as n";
+// startsAt: the start the run_at values were computed from; by default the booking's current start.
+const plan = async (client: Client, bookingId: string, steps: [string, string][], startsAt?: string) =>
+  scalar<number>(client, planSql, [
+    bookingId,
+    JSON.stringify(steps.map(([step_key, run_at]) => ({ step_key, run_at }))),
+    startsAt ?? (await scalar<Date | null>(client, "select starts_at from public.bookings where id = $1", [bookingId])),
+  ]);
 const claimSql = "select * from public.claim_due_jobs($1, $2, $3, $4)";
 const claim = async (client: Client, now: string, bookingId: string | null, limit = 50, minutes = 5) =>
   (await client.query<Job>(claimSql, [now, limit, minutes, bookingId])).rows;
@@ -92,7 +97,19 @@ describe("plan_booking_jobs", () => {
       await actAs(client, "service_role");
       expect(await plan(client, booking, [["reminder_1h", at(9)]])).toBe(0);
       expect(await jobs(client, booking)).toEqual([]);
-      expect((await sqlError(client, planSql, ["00000000-0000-0000-0000-000000000000", "[]"])).code).toBe("P0002");
+      expect((await sqlError(client, planSql, ["00000000-0000-0000-0000-000000000000", "[]", at(10)])).code).toBe("P0002");
+    }));
+
+  it("plans nothing and keeps the open jobs when the booking moved after the jobs were computed", () =>
+    rollback(async (client) => {
+      const host = await addProfile(client, "host@example.com");
+      const booking = await addBooking(client, host, at(12), at(12, 30));
+      await actAs(client, "service_role");
+      expect(await plan(client, booking, [["reminder_1h", at(11)]])).toBe(1);
+
+      // A calendar sync computed its jobs for 10:00, but the booking has moved on to 12:00 since.
+      expect(await plan(client, booking, [["reminder_1h", at(9)]], at(10))).toBe(0);
+      expect((await jobs(client, booking)).map((j) => [j.state, iso(j.planned_for)])).toEqual([["planned", at(12)]]);
     }));
 });
 
@@ -228,7 +245,7 @@ describe("grants and RLS", () => {
         ["select 1 from public.outbound_mails", []],
         ["insert into public.outbound_mails (send_key, kind) values ('x', 'invite')", []],
         ["insert into public.booking_jobs (booking_id, step_key, run_at, planned_for) values ($1, 'x', now(), now())", [booking]],
-        [planSql, [booking, "[]"]],
+        [planSql, [booking, "[]", at(10)]],
         [claimSql, [at(10), 10, 5, null]],
         ["select public.finish_job(gen_random_uuid(), 'done', null)", []],
       ];
