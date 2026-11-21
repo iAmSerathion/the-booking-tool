@@ -164,6 +164,8 @@ export async function createEvent(accessToken: string, calendarId: string, event
       end: { dateTime: event.end.toISOString(), timeZone: event.timeZone },
       attendees: event.attendees,
       guestsCanModify: false,
+      // Only the invitee may answer for the booking; a forwarded guest could otherwise decline it.
+      guestsCanInviteOthers: false,
       reminders: { useDefault: true },
       extendedProperties: { private: { [bookingIdProperty]: event.bookingId } },
       ...(event.meet ? { conferenceData: { createRequest: { requestId: event.eventId ?? event.bookingId, conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
