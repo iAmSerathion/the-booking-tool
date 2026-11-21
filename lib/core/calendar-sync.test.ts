@@ -151,6 +151,14 @@ describe("push channel and safety sync", () => {
     expect(channelDue({ channelId: null, renewedAt: hours(-1), expiresAt: null, now })).toBe(true);
   });
 
+  it("after a failed renewal of an expiring or expired channel, retries at most once an hour", () => {
+    const minutes = (m: number) => new Date(now.getTime() + m * 60_000);
+    expect(channelDue({ channelId: "c1", renewedAt: minutes(-1), expiresAt: hours(2), now })).toBe(false);
+    expect(channelDue({ channelId: "c1", renewedAt: minutes(-1), expiresAt: hours(-2), now })).toBe(false);
+    expect(channelDue({ channelId: "c1", renewedAt: minutes(-61), expiresAt: hours(2), now })).toBe(true);
+    expect(channelDue({ channelId: "c1", renewedAt: minutes(-61), expiresAt: hours(-2), now })).toBe(true);
+  });
+
   it("syncs every 15 minutes", () => {
     expect(syncDue(null, now)).toBe(true);
     expect(syncDue(new Date(now.getTime() - 14 * 60_000), now)).toBe(false);

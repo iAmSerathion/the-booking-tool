@@ -109,12 +109,14 @@ export const channelRenewHours = 24;
 // Safety net: sync when the last sync is older than this, in case a notification got lost.
 export const safetySyncMinutes = 15;
 
-// No renewal yet: now. No channel after a renewal (Google refused it): retry after an hour. Otherwise when the channel
-// is a day old or expires within a day.
+// No renewal yet: now. Never within an hour of the last attempt: a failed renewal only sets renewedAt and keeps the old
+// channel, which may be expiring or expired, so without this a refusing Google would be asked every scheduler tick.
+// Otherwise when there is no channel, or it is a day old or expires within a day.
 export function channelDue(p: { channelId: string | null; renewedAt: Date | null; expiresAt: Date | null; now: Date }): boolean {
   const now = p.now.getTime();
   if (!p.renewedAt) return true;
-  if (!p.channelId || !p.expiresAt) return now - p.renewedAt.getTime() >= 3_600_000;
+  if (now - p.renewedAt.getTime() < 3_600_000) return false;
+  if (!p.channelId || !p.expiresAt) return true;
   return now - p.renewedAt.getTime() >= channelRenewHours * 3_600_000 || p.expiresAt.getTime() - now <= channelRenewHours * 3_600_000;
 }
 
