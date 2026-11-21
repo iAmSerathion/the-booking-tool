@@ -6,7 +6,14 @@ import { hashToken } from "./token";
 
 type Result = { data: unknown; error: unknown };
 const db = vi.hoisted(() => ({ tables: {} as Record<string, (filters: [string, string, unknown][]) => Result>, queries: [] as [string, [string, string, unknown][]][] }));
-vi.mock("@/lib/availability/data", () => ({ loadOffer: async () => ({ slots: [{ start: "s", end: "e", hostIds: ["h1"] }], availability: new Map() }) }));
+const availability = vi.hoisted(() => ({ current: { state: "unavailable" } as unknown, calls: [] as unknown[][] }));
+vi.mock("@/lib/availability/data", () => ({
+  loadOffer: async () => ({ slots: [{ start: "s", end: "e", hostIds: ["h1"] }], availability: new Map() }),
+  loadAvailability: async (...args: unknown[]) => {
+    availability.calls.push(args.slice(1));
+    return availability.current;
+  },
+}));
 vi.mock("@/lib/db/admin", () => ({
   createAdminSupabase: () => ({
     from(table: string) {
@@ -33,7 +40,7 @@ vi.mock("@/lib/db/admin", () => ({
   }),
 }));
 
-const { loadBookingPage, loadConfirmation, loadContext } = await import("./data");
+const { loadBookingPage, loadConfirmation, loadContext, loadRescheduleOffer } = await import("./data");
 
 const typeId = "00000000-0000-4000-8000-000000000101";
 const people = [
@@ -56,6 +63,44 @@ beforeEach(() => {
 });
 
 describe("loadContext", () => {
+  describe("booking links", () => {
+    const token = "a".repeat(43);
+    const link = { id: "link-1", host_id: "h2", event_type_id: typeId, single_use: true, used_at: null, expires_at: null, revoked_at: null };
+    const questions = [{ id: "size", label: "Team size", type: "choice", choices: ["Small", "Large"] }];
+    let row: Record<string, unknown> | null;
+    beforeEach(() => {
+      row = { ...link, prefill: { name: "Ada", email: "ada@example.com", timezone: "Europe/Berlin", answers: { size: "Large", other: "x" } }, metadata: { secret: "s" } };
+      db.tables.booking_links = (f) => ({ data: has(f, "token_hash") === hashToken(token) ? row : null, error: null });
+      db.tables.event_types = (f) => ({ data: has(f, "id") === typeId ? { ...meeting, questions } : null, error: null });
+      db.tables.profiles = (f) => ({ data: people.find((p) => p.id === has(f, "id")) ?? null, error: null });
+    });
+
+    it("fixes host and event type and returns the cleaned prefill, never the metadata", async () => {
+      const context = await loadContext({ kind: "link", token });
+      expect(context).toEqual({
+        via: "link",
+        hosts: [{ id: "h2", name: "Blake Host", meetAuto: false }],
+        eventType: { id: typeId, slug: "meeting", title: "Meeting", description: null, durationMinutes: 30, questions },
+        linkId: "link-1",
+        prefill: { name: "Ada", email: "ada@example.com", timeZone: "Europe/Berlin", answers: { size: "Large" } },
+      });
+      expect(JSON.stringify(context)).not.toContain("secret");
+      expect(db.queries.find(([t]) => t === "profiles")![1]).toEqual(expect.arrayContaining([["eq", "active", true], ["eq", "bookable", true]]));
+      expect(db.queries.find(([t]) => t === "event_types")![1]).toEqual(expect.arrayContaining([["eq", "active", true]]));
+    });
+
+    it("is null for malformed, unknown, used, expired and revoked links and a gone host or event type", async () => {
+      expect(await loadContext({ kind: "link", token: "short" })).toBeNull();
+      expect(await loadContext({ kind: "link", token: "b".repeat(43) })).toBeNull();
+      for (const change of [{ used_at: "2026-01-01T00:00:00Z" }, { expires_at: "2020-01-01T00:00:00Z" }, { revoked_at: "2026-01-01T00:00:00Z" }, { host_id: "gone" }, { event_type_id: "gone" }]) {
+        row = { ...link, prefill: {}, ...change };
+        expect(await loadContext({ kind: "link", token }), JSON.stringify(change)).toBeNull();
+      }
+      row = { ...link, single_use: false, used_at: "2026-01-01T00:00:00Z", prefill: {} };
+      expect(await loadContext({ kind: "link", token })).not.toBeNull();
+    });
+  });
+
   it("gives the general page every active bookable member in round robin, with the default event type", async () => {
     expect(await loadContext({ kind: "page" })).toEqual({
       via: "page",
@@ -113,6 +158,9 @@ describe("loadConfirmation", () => {
   const token = "a".repeat(43);
   const row = {
     id: "b1",
+    host_id: "h1",
+    google_event_id: "e1",
+    invitee_email: "robin@example.com",
     starts_at: "2026-11-04T09:30:00+00:00",
     ends_at: "2026-11-04T10:00:00+00:00",
     state: "booked",
@@ -126,6 +174,9 @@ describe("loadConfirmation", () => {
     db.tables.bookings = (f) => ({ data: has(f, "token_hash") === hashToken(token) ? [row] : [], error: null });
     expect(await loadConfirmation(token)).toEqual({
       bookingId: "b1",
+      hostId: "h1",
+      googleEventId: "e1",
+      inviteeEmail: "robin@example.com",
       startsAt: row.starts_at,
       endsAt: row.ends_at,
       timeZone: "Europe/Berlin",
@@ -147,5 +198,44 @@ describe("loadConfirmation", () => {
     expect(await loadConfirmation("short")).toBeNull();
     expect(await loadConfirmation(undefined)).toBeNull();
     expect(db.queries).toEqual([]);
+  });
+});
+
+describe("loadRescheduleOffer", () => {
+  // Monday 2 November 2026, 08:00 Berlin; the booking is 9:00-9:30 the same day and also in Google's busy times.
+  const own = { hostId: "h1", startsAt: "2026-11-02T08:00:00.000Z", endsAt: "2026-11-02T08:30:00.000Z" };
+  const block = { start: new Date(own.startsAt), end: new Date(own.endsAt) };
+  const ok = {
+    state: "ok",
+    timeZone: "Europe/Berlin",
+    primaryCalendarId: "host@example.com",
+    input: {
+      windows: [[{ start: "09:00", end: "10:30" }], [], [], [], [], [], []],
+      timeZone: "Europe/Berlin",
+      busy: [block],
+      bookings: [block],
+      bufferMinutes: 30,
+      minNoticeHours: 0,
+      maxBookingsPerDay: 1,
+      horizonDays: 0,
+      now: new Date("2026-11-02T07:00:00Z"),
+    },
+  };
+
+  it("offers the host's times around the booking with its own duration, without its current start", async () => {
+    availability.current = ok;
+    availability.calls = [];
+    const offer = await loadRescheduleOffer(own, { fresh: true });
+    expect(offer.slots).toEqual([
+      { start: "2026-11-02T08:30:00.000Z", end: "2026-11-02T09:00:00.000Z" },
+      { start: "2026-11-02T09:00:00.000Z", end: "2026-11-02T09:30:00.000Z" },
+    ]);
+    expect(offer.availability).toBe(ok);
+    expect(availability.calls).toEqual([["h1", { fresh: true }]]);
+  });
+
+  it("offers nothing when the host's availability is not ok", async () => {
+    availability.current = { state: "needs_reconnect" };
+    expect((await loadRescheduleOffer(own)).slots).toEqual([]);
   });
 });

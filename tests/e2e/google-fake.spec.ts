@@ -122,3 +122,28 @@ test("events: insert with Meet, list, free/busy, delete, and one-shot insert fai
   expect((await request.post(events, { headers: auth, data: body })).status()).toBe(503);
   expect((await request.post(events, { headers: auth, data: body })).status()).toBe(200);
 });
+
+test("events: patch moves an event in free/busy, keeps every patch with its query, and fails once per calendar on request", async ({ request }) => {
+  const calendar = `patch#${Date.now()}@example.com`;
+  const auth = { authorization: `Bearer fake-access-${email}` };
+  const events = `${googleFakeUrl}/calendar/v3/calendars/${encodeURIComponent(calendar)}/events`;
+  const at = (hour: number) => ({ dateTime: `2030-01-08T${String(hour).padStart(2, "0")}:00:00.000Z`, timeZone: "UTC" });
+  const created = await (await request.post(events, { headers: auth, data: { summary: "Move me", start: at(9), end: at(10) } })).json();
+  const patch = (id: string) => request.patch(`${events}/${id}?sendUpdates=all`, { headers: auth, data: { start: at(13), end: at(14) } });
+
+  await request.post(`${googleFakeUrl}/control/fail-patch?calendar=${encodeURIComponent(calendar)}&count=1`);
+  expect((await patch(created.id)).status()).toBe(503);
+  const moved = await (await patch(created.id)).json();
+  expect(moved).toMatchObject({ summary: "Move me", start: at(13), end: at(14), patches: [{ body: { start: at(13), end: at(14) }, query: { sendUpdates: "all" } }] });
+  const busy = await (
+    await request.post(`${googleFakeUrl}/calendar/v3/freeBusy`, {
+      headers: auth,
+      data: { timeMin: "2030-01-08T00:00:00Z", timeMax: "2030-01-09T00:00:00Z", items: [{ id: calendar }] },
+    })
+  ).json();
+  expect(busy.calendars[calendar].busy).toEqual([{ start: at(13).dateTime, end: at(14).dateTime }]);
+
+  expect((await patch("missing")).status()).toBe(404);
+  await request.delete(`${events}/${created.id}`, { headers: auth });
+  expect((await patch(created.id)).status()).toBe(404);
+});
