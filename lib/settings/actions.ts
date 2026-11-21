@@ -3,8 +3,7 @@
 import { refresh } from "next/cache";
 import { signedIn } from "@/lib/auth/member";
 import { parseRules, parseWindows, timeZones, weekdays } from "@/lib/core/settings";
-import { createAdminSupabase } from "@/lib/db/admin";
-import { revokeToken } from "@/lib/google/oauth";
+import { disconnectGoogle } from "@/lib/google/connection";
 
 // What a settings form shows after saving: an inline error, or a short confirmation (message, else "Saved.").
 export type ActionState = { error: string | null; saved: boolean; message?: string };
@@ -13,16 +12,9 @@ const saved: ActionState = { error: null, saved: true };
 const failed = (error: string): ActionState => ({ error, saved: false });
 const generic = "Saving failed. Please try again.";
 
-// Give the grant back to Google (best effort), then delete the token and the connection row.
 export async function disconnectCalendar(): Promise<ActionState> {
   const { userId } = await signedIn();
-  const admin = createAdminSupabase();
-  const { data: token, error: readError } = await admin.rpc("google_refresh_token", { p_user_id: userId });
-  if (readError) return failed("Disconnecting failed. Please try again.");
-  // shortcut: once calendar push channels exist (M8), stop the channel here first, while access still works.
-  if (token) await revokeToken(token as string);
-  const { error } = await admin.rpc("google_connection_delete", { p_user_id: userId });
-  if (error) return failed("Disconnecting failed. Please try again.");
+  if (!(await disconnectGoogle(userId))) return failed("Disconnecting failed. Please try again.");
   refresh();
   return saved;
 }

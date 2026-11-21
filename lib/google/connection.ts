@@ -1,5 +1,5 @@
 import { createAdminSupabase } from "@/lib/db/admin";
-import { GoogleError, refreshAccess } from "./oauth";
+import { GoogleError, refreshAccess, revokeToken } from "./oauth";
 
 // A fresh Google access token for a member: refresh token from Vault, then Google. Server code only.
 // invalid_grant means the grant is gone (revoked, expired, password change): status needs_reconnect.
@@ -24,4 +24,15 @@ export async function googleAccess(userId: string): Promise<Access> {
     }
     return { ok: false, reason: "unavailable" };
   }
+}
+
+// Give the grant back to Google (best effort), then delete the token and the connection row. False if the database failed.
+export async function disconnectGoogle(userId: string): Promise<boolean> {
+  const admin = createAdminSupabase();
+  const { data: token, error: readError } = await admin.rpc("google_refresh_token", { p_user_id: userId });
+  if (readError) return false;
+  // shortcut: once calendar push channels exist (M8), stop the channel here first, while access still works.
+  if (token) await revokeToken(token as string);
+  const { error } = await admin.rpc("google_connection_delete", { p_user_id: userId });
+  return !error;
 }
