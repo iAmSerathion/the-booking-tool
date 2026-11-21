@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, startTransition, useActionState, useState } from "react";
+import { type FormEvent, startTransition, useActionState, useState, useSyncExternalStore } from "react";
 import type { LinkFormOptions } from "@/lib/links/data";
 import { type CreateLinkState, createLink } from "@/lib/links/actions";
 import styles from "../settings/settings.module.css";
@@ -13,6 +13,8 @@ export function CreateLinkForm({ eventTypes, hosts }: LinkFormOptions) {
   const [state, dispatch, pending] = useActionState(createLink, { error: null, saved: false, url: null } as CreateLinkState);
   const [typeId, setTypeId] = useState(eventTypes[0]?.id ?? "");
   const [copied, setCopied] = useState(false);
+  // Like ActionForm: a click before hydration would be a GET submit that puts the invitee's details in the URL.
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
   const questions = eventTypes.find((t) => t.id === typeId)?.questions ?? [];
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -111,7 +113,7 @@ export function CreateLinkForm({ eventTypes, hosts }: LinkFormOptions) {
       </fieldset>
 
       <div className={styles.actions}>
-        <button type="submit" disabled={pending || !typeId}>
+        <button type="submit" disabled={pending || !typeId || !hydrated}>
           Create link
         </button>
         {state.error && (
@@ -138,3 +140,5 @@ export function CreateLinkForm({ eventTypes, hosts }: LinkFormOptions) {
     </form>
   );
 }
+
+const noSubscribe = () => () => {};

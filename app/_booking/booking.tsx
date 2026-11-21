@@ -9,7 +9,7 @@ import { cleanBookingInput, slotChip, validateBooking } from "@/lib/core/booking
 import { type Question, validateAnswers } from "@/lib/core/questions";
 import { type MessageKey, t } from "@/lib/i18n";
 import styles from "./booking.module.css";
-import { SlotPicker, useInviteeZone } from "./slot-picker";
+import { SlotPicker, useHydrated, useInviteeZone } from "./slot-picker";
 
 // The booking form: pick a day and time in the invitee's zone, enter details and answers, book. Everything is checked
 // here for quick feedback and again in the server action, which redirects to the confirmation page on success.
@@ -49,6 +49,7 @@ export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, even
   const [errors, setErrors] = useState<Record<string, MessageKey>>({});
   const [formError, setFormError] = useState<MessageKey | null>(null);
   const [pending, startTransition] = useTransition();
+  const hydrated = useHydrated();
   // NaN until mounted: a submit before that counts as a bot (looksLikeBot).
   const startedAt = useRef(Number.NaN);
   const honeypot = useRef<HTMLInputElement>(null);
@@ -188,7 +189,7 @@ export function Booking({ action, locale, defaultTimeZone, privacyUrl, now, even
             {t(locale, formError)}
           </p>
         )}
-        <button type="submit" className={styles.submit} disabled={pending}>
+        <button type="submit" className={styles.submit} disabled={pending || !hydrated}>
           {t(locale, pending ? "booking.submitting" : "booking.submit")}
         </button>
       </form>

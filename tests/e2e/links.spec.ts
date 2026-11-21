@@ -213,3 +213,19 @@ test("the links page and a link's booking page fit 390px and 1440px without side
     await removeHost(host.id);
   }
 });
+
+test("without JavaScript (before hydration) the link and booking submit buttons stay disabled, so nothing submits as a GET", async ({ browser, baseURL }) => {
+  const host = await newHost({ name: "Quinn Host" });
+  const context = await browser.newContext({ javaScriptEnabled: false, timezoneId: zone, locale: "en-US" });
+  try {
+    await signInAs(context, baseURL!, host.email);
+    const page = await context.newPage();
+    await page.goto("/app/links");
+    await expect(page.getByRole("button", { name: "Create link" })).toBeDisabled();
+    await page.goto(`/${host.slug}`);
+    await expect(page.getByRole("button", { name: "Book this time" })).toBeDisabled();
+  } finally {
+    await context.close();
+    await removeHost(host.id);
+  }
+});

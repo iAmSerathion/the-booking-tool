@@ -7,7 +7,7 @@ import type { Locale } from "@/lib/config";
 import { slotChip } from "@/lib/core/booking";
 import { type MessageKey, t } from "@/lib/i18n";
 import styles from "../../_booking/booking.module.css";
-import { SlotPicker, useInviteeZone } from "../../_booking/slot-picker";
+import { SlotPicker, useHydrated, useInviteeZone } from "../../_booking/slot-picker";
 
 // The picker plus the submit; success redirects to the confirmation page, anything else comes back here.
 type Props = {
@@ -25,6 +25,7 @@ export function Reschedule({ action, cancelHref, locale, defaultTimeZone, now, s
   const [start, setStart] = useState<string | null>(null);
   const [error, setError] = useState<MessageKey | null>(null);
   const [pending, startTransition] = useTransition();
+  const hydrated = useHydrated();
   const selected = slots.find((s) => s.start === start) ?? null;
 
   function submit(event: FormEvent) {
@@ -54,7 +55,7 @@ export function Reschedule({ action, cancelHref, locale, defaultTimeZone, now, s
             {t(locale, error)}
           </p>
         )}
-        <button type="submit" className={styles.submit} disabled={pending}>
+        <button type="submit" className={styles.submit} disabled={pending || !hydrated}>
           {t(locale, pending ? "reschedule.submitting" : "reschedule.submit")}
         </button>
         <p className={styles.actions}>
