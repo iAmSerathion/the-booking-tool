@@ -31,3 +31,103 @@ export function widgetFrameAncestors(widget: WidgetRow | null, fallback: readonl
 export const widgetPath = (id: string, view: WidgetView) => `/widget/${id}${view === "section" ? "/section" : ""}`;
 // The confirmation stays under the widget path: every other page sends frame-ancestors 'none'.
 export const widgetConfirmationPath = (id: string, view: WidgetView, token: string, fresh = false) => `${widgetPath(id, view)}/confirmed/${token}${fresh ? "?new=1" : ""}`;
+
+// Protocol v1 between public/widget.js on the host page and the widget pages (postMessage). public/widget.js repeats
+// these names and limits (it is a classic script without imports); tests/unit/widget-loader.test.ts checks they match.
+// Every message is { source, v: 1, type, ... }; receivers ignore anything else. Messages carry no invitee data.
+export const widgetMessageSource = "booking-widget";
+export const widgetTriggerAttribute = "data-booking-widget";
+export const widgetSectionAttribute = "data-booking-section";
+export const widgetBookedEvent = "booking-widget:booked";
+export const widgetUnavailableEvent = "booking-widget:unavailable";
+export const widgetReadyTimeout = 15_000;
+export const widgetMaxHeight = 10_000;
+
+type Signal = "ready" | "close" | "top" | "booked";
+export type WidgetMessage = { source: typeof widgetMessageSource; v: 1; type: Signal } | { source: typeof widgetMessageSource; v: 1; type: "height"; height: number };
+
+export function widgetMessage(type: Signal): WidgetMessage;
+export function widgetMessage(type: "height", height: number): WidgetMessage;
+export function widgetMessage(type: WidgetMessage["type"], height = 0): WidgetMessage {
+  if (type === "height") return { source: widgetMessageSource, v: 1, type, height: Math.min(widgetMaxHeight, Math.max(0, Math.round(height))) };
+  return { source: widgetMessageSource, v: 1, type };
+}
+
+// The origin of the page that framed the widget (location.ancestorOrigins[0], else document.referrer), or null when it
+// is not one of the widget's origins (widgetEmbedOrigins). The widget posts only to this origin, never to "*".
+export function parentOrigin(candidates: readonly (string | null | undefined)[], allowed: readonly string[]): string | null {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const origin = new URL(candidate).origin;
+      if (allowed.includes(origin)) return origin;
+    } catch {}
+  }
+  return null;
+}
+
+// The one message from the host page (section only): { type: "prefill", name, email, company, topic, answers } with
+// answers as [{ id, answer }] (answer a string, or strings for a multi question; a v1 "question" field is ignored).
+// Returns the raw values for linkPrefill, which cleans them against the event type's questions; null for anything else.
+export type WidgetPrefill = { name: unknown; email: unknown; company: unknown; topic: unknown; answers: Record<string, unknown> };
+
+export function readWidgetPrefill(data: unknown): WidgetPrefill | null {
+  if (!data || typeof data !== "object") return null;
+  const m = data as Record<string, unknown>;
+  if (m.source !== widgetMessageSource || m.v !== 1 || m.type !== "prefill") return null;
+  const answers: Record<string, unknown> = {};
+  for (const pair of Array.isArray(m.answers) ? m.answers.slice(0, 20) : []) {
+    if (pair && typeof pair === "object" && typeof pair.id === "string" && !Object.hasOwn(answers, pair.id)) answers[pair.id] = pair.answer;
+  }
+  return { name: m.name, email: m.email, company: m.company, topic: m.topic, answers };
+}
+
+// Steps in a section: every change brings the section's top into view; "booked" only for the change from the booking to
+// its fresh confirmation in the same loaded section. Nothing on the first step (also after a reload).
+export type WidgetStep = { step: "booking" | "booked" | "confirmed"; token: string | null };
+
+export function widgetStepMessages(previous: WidgetStep | null, next: WidgetStep): { top: boolean; booked: boolean } {
+  if (!previous || (previous.step === next.step && previous.token === next.token)) return { top: false, booked: false };
+  return { top: true, booked: previous.step === "booking" && next.step === "booked" };
+}
+
+// Where a booking was made: widget.js adds the host page's path (location.pathname only) as ?page= to the frame URL.
+export const widgetPageParam = "page";
+export const widgetPageMax = 200;
+const pagePattern = /^\/[A-Za-z0-9/_.-]*$/;
+
+// The path without a trailing slash (except "/"), only plain letters, digits and "/_.-", at most 200 characters; else null.
+export function cleanWidgetPage(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let end = value.length;
+  while (end > 1 && value.charAt(end - 1) === "/") end--;
+  const path = value.slice(0, end);
+  return path.length <= widgetPageMax && pagePattern.test(path) ? path : null;
+}
+
+// In the frame: the verified parent origin plus ?page= give the full link; null without either.
+export function widgetBookingPage(origin: string | null, path: unknown): string | null {
+  const page = cleanWidgetPage(path);
+  return origin && page ? readWidgetBookingPage(`${origin}${page}`, [origin]) : null;
+}
+
+// On the server, again: http(s), an origin the widget allows, a clean path, no credentials, search or hash, written
+// exactly as a browser would, at most 300 characters (the bookings.booking_page check). Else null: booked without a page.
+export function readWidgetBookingPage(value: unknown, allowed: readonly string[]): string | null {
+  if (typeof value !== "string" || value.length > 300) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password || url.search || url.hash) return null;
+  if (!allowed.includes(url.origin) || cleanWidgetPage(url.pathname) !== url.pathname) return null;
+  const link = `${url.origin}${url.pathname}`;
+  return link === value ? link : null;
+}
+
+// What widget.js offers the host page as window.BookingWidget.
+export type BookingWidgetPrefill = { name?: string; email?: string; company?: string; topic?: string; answers?: { id: string; answer: string | string[] }[] };
+export type BookingWidgetSection = { update(prefill: BookingWidgetPrefill): void; unmount(): void };
+export type BookingWidgetApi = { v: 1; mount(element: HTMLElement, prefill?: BookingWidgetPrefill): BookingWidgetSection | null; unmount(element: HTMLElement): boolean };
