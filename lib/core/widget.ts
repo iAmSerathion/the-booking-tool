@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 // Widgets: ids, embed origins and paths. Pure, shared by the proxy (frame-ancestors per request), the widget pages and
 // the booking action, so the origins a widget may be framed by come from one place.
 
@@ -40,11 +42,13 @@ export function parseOrigins(text: string): { origins: string[] } | { error: str
 }
 
 // The code an embedding site copies. appUrl is the instance's validated origin (never a request header), id a widget id,
-// locale picks the loader's labels; nothing else goes into the HTML. The section mounts once the deferred loader ran.
+// locale picks the loader's labels and the button text; nothing else goes into the HTML. The section mounts once the
+// deferred loader ran.
 export function widgetSnippets(appUrl: string, id: string, locale: "de" | "en") {
   const script = `<script src="${appUrl}/widget.js" data-locale="${locale}" defer></script>`;
+  const label = t(locale, "widget.title").replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   return {
-    window: `${script}\n<a href="${appUrl}/widget/${id}" data-booking-widget="${id}">Book a time</a>`,
+    window: `${script}\n<a href="${appUrl}/widget/${id}" data-booking-widget="${id}">${label}</a>`,
     section: [
       script,
       `<div data-booking-section="${id}"></div>`,
