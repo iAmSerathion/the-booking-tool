@@ -63,6 +63,10 @@ test("an admin invites a member who can then sign in; duplicates and reserved li
     expect(await profileByEmail(email)).toMatchObject({ name, slug: `invitee-${suffix}`, is_admin: false, bookable: false, active: true });
     await expect(card(page, name)).toBeVisible();
 
+    // The form starts empty again after an invite; the same email a second time is refused.
+    await expect(form.getByLabel("Google account email")).toHaveValue("");
+    await form.getByLabel("Name", { exact: true }).fill(name);
+    await form.getByLabel("Google account email").fill(email);
     await form.getByRole("button", { name: "Invite" }).click();
     await expect(form.getByRole("alert")).toHaveText("Already in the team.");
 
