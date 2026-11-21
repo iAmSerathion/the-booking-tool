@@ -119,7 +119,17 @@ export function parseConfig(env: Env): Config {
   const logoUrl = url("BRAND_LOGO_URL", ["https:"]);
   const privacyUrl = url("PRIVACY_URL", ["https:", "http:"]);
   const imprintUrl = url("IMPRINT_URL", ["https:", "http:"]);
+  const loopbackHosts = ["localhost", "127.0.0.1", "[::1]"];
   const webhookUrl = url("WEBHOOK_URL", ["https:", "http:"]);
+  if (webhookUrl) {
+    // The body carries invitee personal data and the signature: never over plain http off this machine, and no
+    // credentials in a URL that ends up in logs.
+    const parsed = new URL(webhookUrl);
+    if (parsed.protocol === "http:" && !loopbackHosts.includes(parsed.hostname)) {
+      problems.push("WEBHOOK_URL must be https (plain http only for localhost, 127.0.0.1 or [::1])");
+    }
+    if (parsed.username || parsed.password) problems.push("WEBHOOK_URL must not contain a username or password");
+  }
 
   const schedulerSecret = get("SCHEDULER_SECRET") ?? "";
   if (schedulerSecret && schedulerSecret.length < 32) problems.push("SCHEDULER_SECRET must be at least 32 characters");
@@ -156,7 +166,7 @@ export function parseConfig(env: Env): Config {
   // A simulated clock lets a caller with the secret send reminders early, so it must never run in a deployment.
   const testClock = get("SCHEDULER_TEST_CLOCK") ?? "false";
   if (!["true", "false"].includes(testClock)) problems.push("SCHEDULER_TEST_CLOCK must be true or false");
-  if (testClock === "true" && appUrl && !["localhost", "127.0.0.1", "[::1]"].includes(new URL(appUrl).hostname)) {
+  if (testClock === "true" && appUrl && !loopbackHosts.includes(new URL(appUrl).hostname)) {
     problems.push("SCHEDULER_TEST_CLOCK is for tests only and needs a loopback APP_URL (localhost, 127.0.0.1 or [::1])");
   }
 

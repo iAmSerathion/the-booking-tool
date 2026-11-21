@@ -163,6 +163,8 @@ Members sign in with Google through Supabase Auth; there is no password or magic
 
 Set `WEBHOOK_URL` and `WEBHOOK_SECRET` (at least 32 characters) and every booking change is POSTed there as JSON. The
 change and its event are written in one database transaction (`booking_outbox`); the scheduler sends the events.
+`WEBHOOK_URL` must be https (plain http only for localhost, 127.0.0.1 or [::1]) and must not contain a username or
+password.
 
 | Event | When |
 |---|---|

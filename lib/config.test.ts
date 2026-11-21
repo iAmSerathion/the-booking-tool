@@ -85,6 +85,20 @@ describe("parseConfig", () => {
     expect(config.webhook).toEqual({ url: "https://hooks.example.com", secret: "s".repeat(32) });
   });
 
+  it.each(["http://127.0.0.1:3998/hook", "http://localhost:3998/hook", "http://[::1]:3998/hook"])("accepts a plain http webhook on loopback: %s", (WEBHOOK_URL) => {
+    expect(parseConfig({ ...valid, WEBHOOK_URL, WEBHOOK_SECRET: "s".repeat(32) }).webhook?.url).toBe(WEBHOOK_URL);
+  });
+
+  it.each(["http://hooks.example.com/hook", "http://10.0.0.5/hook", "http://127.0.0.1.example.com/hook"])("refuses a plain http webhook off loopback: %s", (WEBHOOK_URL) => {
+    expect(problems({ ...valid, WEBHOOK_URL, WEBHOOK_SECRET: "s".repeat(32) })).toEqual([
+      "WEBHOOK_URL must be https (plain http only for localhost, 127.0.0.1 or [::1])",
+    ]);
+  });
+
+  it.each(["https://user:pass@hooks.example.com/hook", "https://user@hooks.example.com/hook", "http://:pass@127.0.0.1/hook"])("refuses a webhook URL with credentials: %s", (WEBHOOK_URL) => {
+    expect(problems({ ...valid, WEBHOOK_URL, WEBHOOK_SECRET: "s".repeat(32) })).toEqual(["WEBHOOK_URL must not contain a username or password"]);
+  });
+
   it("normalizes allowed Google domains", () => {
     expect(parseConfig({ ...valid, ALLOWED_GOOGLE_DOMAINS: " Example.com, ,other.org " }).google.allowedDomains).toEqual(["example.com", "other.org"]);
   });
