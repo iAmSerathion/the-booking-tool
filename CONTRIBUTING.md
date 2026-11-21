@@ -8,10 +8,10 @@ on the approach. Security problems go through [SECURITY.md](SECURITY.md), not pu
 Requirements: Node 24+ (`engines` in `package.json`) and Docker.
 
 ```bash
-npm install
+npm ci
 npm run stack:up             # local Supabase on 127.0.0.1, writes .env.e2e.local
-cp .env.example .env.local   # fill in the values; Supabase URL and keys are in .env.e2e.local
-npm run dev                  # http://localhost:3000; set APP_URL=http://localhost:3000
+cp .env.example .env.local   # fill in the values (see below); Supabase URL and keys are in .env.e2e.local
+npm run dev                  # http://127.0.0.1:3000, bound to 127.0.0.1 only
 npm run stack:down           # stop it and delete its data
 ```
 
@@ -20,12 +20,37 @@ npm run stack:down           # stop it and delete its data
 keys each time. The API listens on `127.0.0.1:54421`, Postgres on `127.0.0.1:54422`. Every port is bound to
 127.0.0.1 only; `supabase start` would publish on all interfaces. `supabase/config.toml` uses the same ports for CI.
 GoTrue accepts redirects to `http://localhost:3000/auth/callback`, `http://127.0.0.1:3000/auth/callback` and
-`http://127.0.0.1:3100/auth/callback`, so run the dev server on port 3000.
+`http://127.0.0.1:3100/auth/callback`, so run the dev server on port 3000 (`npm run dev` does).
 
-For a working `.env.local` you also need `SCHEDULER_SECRET` (any 32+ characters), `SMTP_URL` and `MAIL_FROM`. Any
-SMTP server works; locally you can run the test sink, `node tests/e2e/smtp-sink.mjs` (SMTP on `127.0.0.1:2525`, so
-`SMTP_URL=smtp://127.0.0.1:2525`; it serves the mails it caught to one address as JSON at
-`http://127.0.0.1:2526/messages?to=<address>`).
+Every `stack:up` generates new keys, so copy the keys from `.env.e2e.local` into `.env.local` again after each run.
+There is one stack per machine (compose project `tbt-stack`), shared by all checkouts: `stack:up` in a second clone
+wipes the first clone's data and keys.
+
+For a working `.env.local` you also need:
+
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: any placeholder (for example `fake-client` and `fake-secret`) unless
+  you sign in by hand with a real Google client ([Signing in locally](#signing-in-locally)).
+- `SCHEDULER_SECRET`: any 32+ characters.
+- `SMTP_URL` and `MAIL_FROM`. Any SMTP server works; locally you can run the test sink,
+  `node tests/e2e/smtp-sink.mjs` (SMTP on `127.0.0.1:2525`, so `SMTP_URL=smtp://127.0.0.1:2525`; it serves the mails
+  it caught to one address as JSON at `http://127.0.0.1:2526/messages?to=<address>`).
+- For the calendar without Google: `GOOGLE_FAKE_URL=http://127.0.0.1:3999` ([Try it without Google](#try-it-without-google)).
+
+A minimal `.env.local` for trying it without Google (replace the two keys with the values from `.env.e2e.local`):
+
+```bash
+APP_URL=http://127.0.0.1:3000
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54421
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<NEXT_PUBLIC_SUPABASE_ANON_KEY from .env.e2e.local>
+SUPABASE_SERVICE_ROLE_KEY=<SUPABASE_SERVICE_ROLE_KEY from .env.e2e.local>
+GOOGLE_CLIENT_ID=fake-client
+GOOGLE_CLIENT_SECRET=fake-secret
+GOOGLE_FAKE_URL=http://127.0.0.1:3999
+SCHEDULER_SECRET=local-scheduler-secret-0123456789abcdef
+SMTP_URL=smtp://127.0.0.1:2525
+MAIL_FROM="Bookings <bookings@example.com>"
+DEFAULT_LOCALE=en
+```
 
 ### Seed data
 
@@ -59,12 +84,31 @@ docker compose -f scripts/stack/compose.yml exec db psql -U postgres -h 127.0.0.
 Then the first Google sign-in with `INITIAL_ADMIN_EMAIL` becomes the admin. Alternatively, put your Google Workspace
 domain into `ALLOWED_GOOGLE_DOMAINS` to get in as a member.
 
-### Without real Google
+### Try it without Google
 
 `tests/e2e/google-fake.mjs` stands in for Google's OAuth, Calendar and push endpoints. It listens on `127.0.0.1:3999`
-(`GOOGLE_FAKE_PORT` moves it) and hands out tokens to anyone, so it is for tests only. The app uses it only when
-`GOOGLE_FAKE_URL` points at localhost or 127.0.0.1; config refuses anything else. It cannot stand in for the Supabase
-login: GoTrue's Google provider always calls accounts.google.com.
+(`GOOGLE_FAKE_PORT` moves it) and hands out tokens to anyone, so it is for local trials and tests only. The app uses it
+only when `GOOGLE_FAKE_URL` points at localhost or 127.0.0.1; config refuses anything else. It cannot stand in for the
+Supabase login: GoTrue's Google provider always calls accounts.google.com, so you cannot sign in to the admin this way.
+
+To book a time by hand on the public pages, with the minimal `.env.local` above:
+
+```bash
+npm run stack:up
+node tests/e2e/google-fake.mjs     # terminal 1
+node tests/e2e/smtp-sink.mjs       # terminal 2
+npm run dev                        # terminal 3
+npm run dev:calendar               # connects host.demo@example.com to the fake
+```
+
+Then open `http://127.0.0.1:3000/demo-host` (or `/`) and book a time. The booking appears as an event in the fake
+(`http://127.0.0.1:3999/control/events?calendar=host.demo@example.com`) and the mails in the sink
+(`http://127.0.0.1:2526/messages?to=<invitee email>`). `npm run dev:calendar` refuses a Supabase or fake that is not on
+localhost or 127.0.0.1. The e2e tests expect the seeded host without a calendar, so run `npm run stack:up` again
+before `npm run test:e2e`.
+
+To watch full bookings without any manual setup, run the booking tests:
+`npx playwright test tests/e2e/booking.spec.ts --project=chromium`.
 
 ## Checks
 
@@ -74,6 +118,7 @@ Run these before you open a pull request; CI (`.github/workflows/ci.yml`) runs t
 npm run lint
 npm run typecheck
 npm test            # unit tests (Vitest)
+npx playwright install chromium   # once per machine, before the first e2e run
 npm run test:e2e    # end-to-end tests (Playwright, builds the app first); needs `npm run stack:up`
 npm run db:test     # fresh local test database on 127.0.0.1:55432 (Docker), migrations and seed
 npm run test:db     # database tests against it

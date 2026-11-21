@@ -2,7 +2,7 @@
 
 A self-hostable booking tool for a team. Members sign in with Google, connect their Google Calendar, and invitees book
 free times on public booking pages, through booking links or in widgets embedded on your website. Every booking becomes
-a Google Calendar event with a Meet link.
+a Google Calendar event, with a Meet link when the member switches Meet on.
 
 Status: pre-release (version 0.0.0). Expect changes before a first tagged release.
 
@@ -42,17 +42,18 @@ Next.js (App Router) on Node 24, Supabase (Postgres, Auth, Vault), Google Calend
 Requirements: Node 24+ and Docker.
 
 ```bash
-npm install
+npm ci
 npm run stack:up             # local Supabase on 127.0.0.1, writes .env.e2e.local
 cp .env.example .env.local   # fill in the values; Supabase URL and keys are in .env.e2e.local
-npm run dev                  # http://localhost:3000
+npm run dev                  # http://127.0.0.1:3000 (bound to 127.0.0.1 only)
 npm run stack:down           # stop the stack and delete its data
 ```
 
 The stack seeds example members (`admin.demo@example.com`, `host.demo@example.com`), an event type and a widget.
-Sign-in is Google only, so signing in by hand needs a Google OAuth client; without one, the e2e tests sign in with
-generated sessions and use a Google fake (`tests/e2e/google-fake.mjs`) for the calendar. Details, including how to
-sign in locally: [CONTRIBUTING.md](CONTRIBUTING.md#local-development).
+Without a Google OAuth client the booking pages show no free times, because the seeded host has no calendar. To book a
+time by hand anyway, run the Google fake and connect the host to it (`npm run dev:calendar`); see
+[Try it without Google](CONTRIBUTING.md#try-it-without-google). Signing in by hand needs a real Google OAuth client:
+[Signing in locally](CONTRIBUTING.md#signing-in-locally).
 
 Run the checks with `npm run lint`, `npm run typecheck` and `npm test`; the database and end-to-end tests are in
 [CONTRIBUTING.md](CONTRIBUTING.md#checks).
