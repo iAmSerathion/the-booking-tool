@@ -12,6 +12,7 @@ import { moveEvent } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
 import { GoogleError } from "@/lib/google/oauth";
 import type { MessageKey } from "@/lib/i18n";
+import { planBookingJobs } from "@/lib/jobs/plan";
 import { sendCancelMails, sendRescheduleMails } from "@/lib/mail/booking";
 import { type Confirmation, loadConfirmation, loadRescheduleOffer, type PublicSlot } from "./data";
 import { removeBookingEvent } from "./google";
@@ -114,8 +115,10 @@ export async function rescheduleBooking(token: string, form: RescheduleForm): Pr
 
   await dropLease(booking.bookingId, lease);
   updateTag(busyCacheTag(booking.hostId));
-  after(() => sendRescheduleMails(booking.bookingId, token, { startsAt: booking.startsAt, endsAt: booking.endsAt }));
-  // M8 seam: re-plan the booking's jobs here. M9 delivers the outbox row already written.
+  // The old reminders died with the move (cancel trigger); plan new ones for the new time. M9 delivers the outbox row.
+  after(() =>
+    Promise.all([planBookingJobs(booking.bookingId), sendRescheduleMails(booking.bookingId, token, { startsAt: booking.startsAt, endsAt: booking.endsAt })]),
+  );
   redirect(`/confirmed/${token}`);
 }
 

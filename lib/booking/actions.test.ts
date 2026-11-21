@@ -25,6 +25,7 @@ vi.mock("next/cache", () => ({ updateTag: (tag: string) => state.calls.push(["up
 // after() runs the callback at once here; the mails themselves are tested in lib/mail.
 vi.mock("next/server", () => ({ after: (fn: () => unknown) => fn() }));
 vi.mock("@/lib/mail/booking", () => ({ sendConfirmationMails: async (...args: unknown[]) => state.calls.push(["sendConfirmationMails", ...args]) }));
+vi.mock("@/lib/jobs/plan", () => ({ planBookingJobs: async (...args: unknown[]) => state.calls.push(["planBookingJobs", ...args]) }));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     state.calls.push(["redirect", url]);
@@ -185,7 +186,7 @@ beforeEach(() => {
 describe("bookSlot", () => {
   it("books the round robin host: hold, Google event, create_booking, cache tag, redirect", async () => {
     expect(await book()).toBe("redirected");
-    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "createEvent", "create_booking", "updateTag", "sendConfirmationMails", "redirect"]);
+    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "createEvent", "create_booking", "updateTag", "planBookingJobs", "sendConfirmationMails", "redirect"]);
     expect(called("loadOffer")[0]).toEqual(["loadOffer", ["h1", "h2"], 30, { fresh: true }]);
     expect(called("hold_slot")[0][1]).toEqual({
       p_host_id: "h2",
@@ -232,6 +233,7 @@ describe("bookSlot", () => {
     expect(called("updateTag")[0][1]).toBe("google-busy-h2");
     // The mails get the saved booking and the same token as the confirmation page.
     expect(called("sendConfirmationMails")).toEqual([["sendConfirmationMails", event.bookingId, token]]);
+    expect(called("planBookingJobs")).toEqual([["planBookingJobs", event.bookingId]]);
   });
 
   it("books through a link with its host, via link and the link id from the server-side context", async () => {
@@ -376,7 +378,7 @@ describe("bookSlot", () => {
     state.holds.set("h2", "hold-2");
     state.access.set("h2", false);
     expect(await book()).toBe("redirected");
-    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "release_hold", "hold_slot", "createEvent", "create_booking", "updateTag", "sendConfirmationMails", "redirect"]);
+    expect(names()).toEqual(["limit", "loadOffer", "hold_slot", "release_hold", "hold_slot", "createEvent", "create_booking", "updateTag", "planBookingJobs", "sendConfirmationMails", "redirect"]);
     expect(called("release_hold")[0][1]).toEqual({ p_hold_id: "hold-2" });
   });
 

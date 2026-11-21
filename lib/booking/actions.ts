@@ -14,6 +14,7 @@ import { createAdminSupabase } from "@/lib/db/admin";
 import { createEvent, deleteEvent, googleEventId } from "@/lib/google/calendar";
 import { googleAccess } from "@/lib/google/connection";
 import { type MessageKey, t } from "@/lib/i18n";
+import { planBookingJobs } from "@/lib/jobs/plan";
 import { sendConfirmationMails } from "@/lib/mail/booking";
 import { type ChannelRef, lastRoundRobinBookings, loadContext, type PublicSlot, publicSlots } from "./data";
 import { withinLimit } from "./limit";
@@ -204,9 +205,9 @@ export async function bookSlot(ref: ChannelRef, form: BookingForm): Promise<Book
 
     // The public pages must not offer this time from the busy cache any longer.
     updateTag(busyCacheTag(hostId));
-    // Confirmation to the invitee and notice to the host, after the response. M8 seam: plan the booking's jobs here too.
+    // Reminders, confirmation to the invitee and notice to the host, after the response.
     // M9 delivers the outbox row that create_booking already wrote.
-    after(() => sendConfirmationMails(bookingId, token));
+    after(() => Promise.all([planBookingJobs(bookingId), sendConfirmationMails(bookingId, token)]));
     // Widget bookings stay inside the frame: /confirmed sends frame-ancestors 'none'.
     redirect(ref.kind === "widget" ? widgetConfirmationPath(ref.id, ref.view, token, true) : `/confirmed/${token}?new=1`);
   }
