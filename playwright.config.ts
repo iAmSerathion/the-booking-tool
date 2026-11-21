@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
-import { assertLocalSupabase, baseURL, embedBlockedPort, embedOrigin, embedPort, envFile, googleFakePort, googleFakeUrl, port, smtpHttpUrl, smtpPort } from "./tests/e2e/env";
+import { assertLocalSupabase, baseURL, embedBlockedPort, embedOrigin, embedPort, envFile, googleFakePort, googleFakeUrl, port, smtpHttpUrl, smtpPort, webhookSecret, webhookUrl } from "./tests/e2e/env";
 
 // Keys of the local Supabase: `npm run stack:up` (or CI after `supabase start`) writes them to .env.e2e.local.
 if (existsSync(envFile)) process.loadEnvFile(envFile);
@@ -34,6 +34,13 @@ export default defineConfig({
       command: "node tests/e2e/smtp-sink.mjs",
       url: `${smtpHttpUrl}/health`,
       env: { E2E_SMTP_PORT: String(smtpPort), E2E_SMTP_HTTP_PORT: new URL(smtpHttpUrl).port },
+      reuseExistingServer: !process.env.CI,
+    },
+    {
+      // Records every webhook the app sends; tests read them back and can make deliveries fail (webhooks.spec.ts).
+      command: "node tests/e2e/webhook-receiver.mjs",
+      url: `${webhookUrl}/health`,
+      env: { E2E_WEBHOOK_PORT: new URL(webhookUrl).port },
       reuseExistingServer: !process.env.CI,
     },
     {
@@ -71,6 +78,8 @@ export default defineConfig({
         GOOGLE_CLIENT_SECRET: "fake-secret",
         SMTP_URL: `smtp://127.0.0.1:${smtpPort}`,
         MAIL_FROM: "Bookings <bookings@example.com>",
+        WEBHOOK_URL: `${webhookUrl}/hook`,
+        WEBHOOK_SECRET: webhookSecret,
         // Lets tests run the scheduler at a simulated time (x-test-now), scoped to their own booking or member.
         SCHEDULER_TEST_CLOCK: "true",
       },
